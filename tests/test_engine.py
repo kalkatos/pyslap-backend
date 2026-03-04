@@ -112,7 +112,7 @@ def test_process_update_loop_executes_actions():
                 "session_id": session_id,
                 "game_id": "dummy",
                 "status": SessionStatus.ACTIVE,
-                "players": {},
+                "players": {"p1":{"name": "Alice"}, "p2":{"name": "Bob"}},
                 "created_at": current_time,
                 "last_action_at": current_time
             }
@@ -123,7 +123,7 @@ def test_process_update_loop_executes_actions():
                 "session_id": session_id,
                 "last_update_timestamp": current_time - 1.0,
                 "public_state": {"ticks": 1},
-                "private_state": {}
+                "private_state": {"p1":{"secret": "123"}, "p2":{"secret": "456"}}
             }
         return None
         

@@ -1,5 +1,17 @@
 {
     "python.analysis.extraPaths": [
         "${workspaceFolder}"
+    ],
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "python.testing.unittestEnabled": true,
+    "python.testing.pytestEnabled": false,
+    "python.testing.unittestArgs": [
+        "-v",
+        "-s",
+        "./pyslap",
+        "-p",
+        "test*.py"
     ]
 }
