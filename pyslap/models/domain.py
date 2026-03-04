@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any, Dict, Optional
 
 
-class SessionStatus(Enum):
+class SessionStatus(str, Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
     TERMINATED = "terminated"

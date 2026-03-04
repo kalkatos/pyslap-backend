@@ -23,7 +23,7 @@ class DummyGame(GameRules):
     def check_game_over(self, state: GameState) -> bool:
         return state.public_state.get("ticks", 0) > 10
 
-    def prepare_state(self, state: GameState, player_id: str) -> Dict[str, Any]:
+    def prepare_state(self, state: GameState, player_id: str, recent_actions: list) -> Dict[str, Any]:
         return {"public": state.public_state, "private": {}}
 
 

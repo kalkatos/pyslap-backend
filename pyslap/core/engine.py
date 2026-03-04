@@ -2,6 +2,7 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
+from dataclasses import asdict
 from pyslap.core.security import SecurityManager
 from pyslap.core.validator import Validator
 from pyslap.core.game_rules import GameRules
@@ -66,15 +67,21 @@ class PySlapEngine:
         )
 
         # Save to database
-        self.db.create("sessions", session.__dict__)
-        self.db.create("states", game_state.__dict__)
+        session_data = asdict(session)
+        session_data["id"] = session_id
+        state_data = asdict(game_state)
+        state_data["id"] = session_id
+        
+        self.db.create("sessions", session_data)
+        self.db.create("states", state_data)
 
         # Schedule the first update loop using the interface
         self.scheduler.schedule_next_update(session_id, config.update_interval_ms)
 
         # Prepare and return initial state for the requester with their specific private state
         rules = self.games[game_id]
-        client_state = rules.prepare_state(game_state, player.player_id)
+        actions = self.db.query("actions", {"session_id": session_id, "processed": False})
+        client_state = rules.prepare_state(game_state, player.player_id, actions)
         
         return {
             "session_id": session_id,
@@ -95,6 +102,7 @@ class PySlapEngine:
         if not session_data:
             return False
             
+        session_data.pop("id", None)
         session = Session(**session_data)
         if session.status != SessionStatus.ACTIVE:
             return False
@@ -117,7 +125,9 @@ class PySlapEngine:
         
         # Update session `last_action_at` timestamp
         session.last_action_at = current_time
-        self.db.update("sessions", session_id, session.__dict__)
+        session_data = asdict(session)
+        session_data["id"] = session_id
+        self.db.update("sessions", session_id, session_data)
 
         return True
 
@@ -134,6 +144,7 @@ class PySlapEngine:
         if not session_data:
             return
             
+        session_data.pop("id", None)
         session = Session(**session_data)
         if session.status != SessionStatus.ACTIVE:
             return
@@ -145,7 +156,9 @@ class PySlapEngine:
         if self.validator.check_session_lifetime(session, current_time, config.max_lifetime_sec) or \
            self.validator.check_session_timeout(session, current_time, config.session_timeout_sec):
             session.status = SessionStatus.TERMINATED
-            self.db.update("sessions", session_id, session.__dict__)
+            session_data = asdict(session)
+            session_data["id"] = session_id
+            self.db.update("sessions", session_id, session_data)
             return # Exit loop without scheduling next
             
         # 3. Load GameState & Actions
@@ -153,6 +166,7 @@ class PySlapEngine:
         if not state_data:
             return
         
+        state_data.pop("id", None)
         state = GameState(**state_data)
         rules = self.games[session.game_id]
         
@@ -183,12 +197,20 @@ class PySlapEngine:
         if rules.check_game_over(state):
             state.is_game_over = True
             session.status = SessionStatus.TERMINATED
-            self.db.update("sessions", session_id, session.__dict__)
-            self.db.update("states", session_id, state.__dict__)
+            
+            session_data = asdict(session)
+            session_data["id"] = session_id
+            state_data = asdict(state)
+            state_data["id"] = session_id
+            
+            self.db.update("sessions", session_id, session_data)
+            self.db.update("states", session_id, state_data)
             return # Exit loop
 
         # 6. Save State and Reschedule
-        self.db.update("states", session_id, state.__dict__)
+        state_data = asdict(state)
+        state_data["id"] = session_id
+        self.db.update("states", session_id, state_data)
         
         # Enforce serverless minimum interval requirement (>=500ms)
         delay_ms = max(config.update_interval_ms, 500)
