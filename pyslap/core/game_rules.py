@@ -12,6 +12,13 @@ class GameRules(ABC):
     """
 
     @abstractmethod
+    def create_game_state(self, players: list[Player]) -> GameState:
+        """
+        Creates a new GameState for the specific game.
+        """
+        pass
+
+    @abstractmethod
     def validate_action(self, action: Action, state: GameState) -> bool:
         """
         Validates if an action is legal for the specific game.

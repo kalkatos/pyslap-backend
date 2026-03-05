@@ -51,6 +51,10 @@ async def _read_input(prompt: str, timeout: float) -> str | None:
         return None
 
 
+def _start_session(game_id: str, player_id: str, player_name: str) -> dict[str, Any] | None:
+    return entrypoint.start_session(game_id, player_id, player_name)
+
+
 def _get_state(session_id: str, player_id: str, token: str) -> GameState:
     return entrypoint.get_state(session_id, player_id, token)
 
@@ -70,7 +74,7 @@ async def run_client() -> None:
 
     try:
         # ---- create session ----
-        result = engine.create_session(GAME_ID, PLAYER_ID, PLAYER_NAME)
+        result = _start_session(GAME_ID, PLAYER_ID, PLAYER_NAME)
         if result is None:
             print("Failed to create session.")
             return

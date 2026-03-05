@@ -1,6 +1,6 @@
 import time
 import uuid
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping
 
 from dataclasses import asdict
 from pyslap.core.security import SecurityManager
@@ -36,7 +36,7 @@ class PySlapEngine:
         self.security = SecurityManager(db)
 
 
-    def create_session(self, game_id: str, requester_id: str, requester_name: str) -> Optional[dict[str, Any]]:
+    def create_session(self, game_id: str, requester_id: str, requester_name: str) -> dict[str, Any] | None:
         """
         Creates a new session, generates tokens, and schedules the first update.
         """
@@ -66,10 +66,9 @@ class PySlapEngine:
         )
         
         # Initialize GameState
-        game_state = GameState(
-            session_id=session_id,
-            last_update_timestamp=current_time
-        )
+        game_state = self.games[game_id].create_game_state([player])
+        game_state.session_id = session_id
+        game_state.last_update_timestamp = current_time
 
         # Save to database
         session_data = asdict(session)

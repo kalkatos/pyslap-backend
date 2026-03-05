@@ -6,6 +6,10 @@ from pyslap.models.domain import GameState
 
 class EntrypointInterface(ABC):
     @abstractmethod
+    def start_session(self, game_id: str, player_id: str, player_name: str) -> dict[str, Any] | None:
+        pass
+
+    @abstractmethod
     def send_action(self, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any]) -> None:
         pass
 

@@ -46,6 +46,28 @@ class RpsGameRules(GameRules):
     # GameRules interface
     # ------------------------------------------------------------------
 
+    def create_game_state(self, players: list[Player]) -> GameState:
+        private_state = {}
+        for player in players:
+            private_state[player.player_id] = {"move": ""}
+        return GameState(
+            session_id="",
+            public_state={
+                "round": 1,
+                "p1_score": 0,
+                "p2_score": 0,
+                "phase": "waiting_for_move",
+                "last_p1_move": None,
+                "last_p2_move": None,
+                "last_round_winner": None,
+                "winner": None,
+                "round_start_ms": 0,
+            },
+            private_state=private_state,
+            is_game_over=False,
+            last_update_timestamp=0,
+        )
+
     def validate_action(self, action: Action, state: GameState) -> bool:
         if state.public_state.get("phase") != "waiting_for_move":
             return False

@@ -1,5 +1,5 @@
-from typing import Any, Optional
-from pyslap.interfaces.receiver import EntrypointInterface
+from typing import Any
+from pyslap.interfaces.entrypoint import EntrypointInterface
 from pyslap.core.engine import PySlapEngine
 from pyslap.models.domain import GameState
 
@@ -10,6 +10,12 @@ class LocalEntrypoint(EntrypointInterface):
 
     def __init__(self, engine: PySlapEngine):
         self.engine = engine
+
+    def start_session(self, game_id: str, player_id: str, player_name: str) -> dict[str, Any] | None:
+        """
+        Starts a new session for a player.
+        """
+        return self.engine.create_session(game_id, player_id, player_name)
 
     def send_action(self, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any]) -> None:
         """
