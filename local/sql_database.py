@@ -1,7 +1,7 @@
 import sqlite3
 import json
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from pyslap.interfaces.database import DatabaseInterface
 
@@ -36,7 +36,7 @@ class SQLiteDatabase(DatabaseInterface):
         finally:
             conn.close()
 
-    def create(self, collection: str, data: Dict[str, Any]) -> str:
+    def create(self, collection: str, data: dict[str, Any]) -> str:
         # Use an existing id if provided, otherwise generate a new one
         record_id = data.get("id", str(uuid.uuid4()))
         if "id" not in data:
@@ -54,7 +54,7 @@ class SQLiteDatabase(DatabaseInterface):
 
         return record_id
 
-    def read(self, collection: str, record_id: str) -> Optional[Dict[str, Any]]:
+    def read(self, collection: str, record_id: str) -> Optional[dict[str, Any]]:
         conn = self._get_connection()
         try:
             cursor = conn.execute(
@@ -69,7 +69,7 @@ class SQLiteDatabase(DatabaseInterface):
         finally:
             conn.close()
 
-    def update(self, collection: str, record_id: str, data: Dict[str, Any]) -> bool:
+    def update(self, collection: str, record_id: str, data: dict[str, Any]) -> bool:
         conn = self._get_connection()
         try:
             cursor = conn.execute(
@@ -93,7 +93,7 @@ class SQLiteDatabase(DatabaseInterface):
         finally:
             conn.close()
 
-    def query(self, collection: str, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def query(self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
         # For a local mock DB, it's safer to fetch all collection items
         # and filter in Python rather than dealing with SQLite JSON intricacies.
         conn = self._get_connection()

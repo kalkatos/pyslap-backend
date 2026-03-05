@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from pyslap.models.domain import Action, GameState, Player
 
@@ -45,13 +45,3 @@ class GameRules(ABC):
         """
         pass
 
-    @abstractmethod
-    def prepare_state(self, state: GameState, player_id: str, recent_actions: List[Action]) -> Dict[str, Any]:
-        """
-        Generates the state presentation for a specific requester.
-        This must merge the `public_state` variable, which is sent to all,
-        and the `private_state[player_id]` which is sent only to the owner.
-        `recent_actions` contains the actions processed in the most recent update tick.
-        Returns a dictionary representing what the player should see.
-        """
-        pass

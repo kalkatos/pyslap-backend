@@ -4,7 +4,7 @@ Best-of-three between a player and a computer with random moves.
 """
 
 import random
-from typing import Any, Dict, List
+from typing import Any
 
 from pyslap.core.game_rules import GameRules
 from pyslap.models.domain import Action, GameState, Player
@@ -16,23 +16,23 @@ VALID_MOVES = {"R", "P", "S"}
 BEATS = {"R": "S", "S": "P", "P": "R"}
 
 
-def _resolve_round(player_move: str, computer_move: str) -> str:
+def _resolve_round(p1_move: str, p2_move: str) -> str:
     """Returns 'player', 'computer', or 'draw'."""
-    if player_move == computer_move:
+    if p1_move == p2_move:
         return "draw"
-    if BEATS[player_move] == computer_move:
-        return "player"
-    return "computer"
+    if BEATS[p1_move] == p2_move:
+        return "p1"
+    return "p2"
 
 
-def _initial_public_state() -> Dict[str, Any]:
+def _initial_public_state() -> dict[str, Any]:
     return {
         "round": 1,
-        "player_score": 0,
-        "computer_score": 0,
+        "p1_score": 0,
+        "p2_score": 0,
         "phase": "waiting_for_move",
-        "last_player_move": None,
-        "last_computer_move": None,
+        "last_p1_move": None,
+        "last_p2_move": None,
         "last_round_winner": None,
         "winner": None,
         "round_start_ms": 0,
@@ -55,30 +55,39 @@ class RpsGameRules(GameRules):
         return choice in VALID_MOVES
 
     def apply_action(self, action: Action, state: GameState) -> GameState:
-        player_move = action.payload["choice"].upper()
-        computer_move = random.choice(list(VALID_MOVES))
+        choice = action.payload["choice"].upper()
+        state.private_state[action.player_id] = choice
 
-        result = _resolve_round(player_move, computer_move)
+        if len(state.private_state) < 2:
+            return state
+
+        choices = []
+        for player_id in state.private_state:
+            if state.private_state[player_id] is None or not "choice" in state.private_state[player_id]:
+                return state
+            choices.append(state.private_state[player_id]["choice"])
+
+        result = _resolve_round(choices[0], choices[1])
 
         ps = state.public_state
-        ps["last_player_move"] = player_move
-        ps["last_computer_move"] = computer_move
+        ps["last_p1_move"] = choices[0]
+        ps["last_p2_move"] = choices[1]
         ps["last_round_winner"] = result
 
-        if result == "player":
-            ps["player_score"] += 1
-        elif result == "computer":
-            ps["computer_score"] += 1
+        if result == "p1":
+            ps["p1_score"] += 1
+        elif result == "p2":
+            ps["p2_score"] += 1
         # draw: no score change, replay the round
 
         # Check if someone reached 2 wins → game over
-        if ps["player_score"] >= 2:
+        if ps["p1_score"] >= 2:
             ps["phase"] = "game_over"
-            ps["winner"] = "player"
+            ps["winner"] = "p1"
             state.is_game_over = True
-        elif ps["computer_score"] >= 2:
+        elif ps["p2_score"] >= 2:
             ps["phase"] = "game_over"
-            ps["winner"] = "computer"
+            ps["winner"] = "p2"
             state.is_game_over = True
         else:
             # Next round (only advance round number on non-draw)
@@ -102,8 +111,8 @@ class RpsGameRules(GameRules):
         if phase == "round_complete":
             ps["phase"] = "waiting_for_move"
             ps["round_start_ms"] = 0
-            ps["last_player_move"] = None
-            ps["last_computer_move"] = None
+            ps["last_p1_move"] = None
+            ps["last_p2_move"] = None
             ps["last_round_winner"] = None
             return state
 
@@ -120,11 +129,3 @@ class RpsGameRules(GameRules):
         phase = state.public_state.get("phase", "")
         return phase in ("game_over", "timeout")
 
-    def prepare_state(
-        self,
-        state: GameState,
-        player_id: str,
-        recent_actions: List[Action],
-    ) -> Dict[str, Any]:
-        private = state.private_state.get(player_id, {})
-        return {**state.public_state, **private}

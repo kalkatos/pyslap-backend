@@ -1,6 +1,6 @@
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Mapping, Optional
 
 from dataclasses import asdict
 from pyslap.core.security import SecurityManager
@@ -17,12 +17,17 @@ class PySlapEngine:
     Stateless by design to fit within Serverless architectures. All state
     is loaded from the DB, processed, and saved back.
     """
+    db: DatabaseInterface
+    scheduler: SchedulerInterface
+    games: Mapping[str, GameRules]
+    validator: Validator
+    security: SecurityManager
 
     def __init__(
             self,
             db: DatabaseInterface,
             scheduler: SchedulerInterface,
-            games_registry: Dict[str, GameRules]
+            games_registry: Mapping[str, GameRules]
     ):
         self.db = db
         self.scheduler = scheduler
@@ -31,7 +36,7 @@ class PySlapEngine:
         self.security = SecurityManager(db)
 
 
-    def create_session(self, game_id: str, requester_id: str, requester_name: str) -> Optional[Dict[str, Any]]:
+    def create_session(self, game_id: str, requester_id: str, requester_name: str) -> Optional[dict[str, Any]]:
         """
         Creates a new session, generates tokens, and schedules the first update.
         """
@@ -79,9 +84,7 @@ class PySlapEngine:
         self.scheduler.schedule_next_update(session_id, config.update_interval_ms)
 
         # Prepare and return initial state for the requester with their specific private state
-        rules = self.games[game_id]
-        actions = self.db.query("actions", {"session_id": session_id, "processed": False})
-        client_state = rules.prepare_state(game_state, player.player_id, actions)
+        client_state = game_state.to_player_state(player.player_id)
         
         return {
             "session_id": session_id,
@@ -90,7 +93,7 @@ class PySlapEngine:
         }
 
 
-    def register_action(self, session_id: str, player_id: str, token: str, action_type: str, payload: Dict[str, Any]) -> bool:
+    def register_action(self, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any]) -> bool:
         """
         Registers an action for the next update loop.
         """

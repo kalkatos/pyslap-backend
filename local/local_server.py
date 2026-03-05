@@ -6,7 +6,7 @@ from pyslap.interfaces.scheduler import SchedulerInterface
 class LocalScheduler(SchedulerInterface):
     """
     A local implementation of SchedulerInterface that simply awaits
-    0.5s using asyncio before executing the next update.
+    using asyncio before executing the next update.
     """
     
     def __init__(self, update_callback: Optional[Callable[[str], Awaitable[None]]] = None):
@@ -21,14 +21,11 @@ class LocalScheduler(SchedulerInterface):
         Schedules the next update by creating an asyncio task that waits 0.5 seconds
         and then calls the update callback.
         """
-        asyncio.create_task(self._wait_and_update(session_id))
+        asyncio.create_task(self._wait_and_update(session_id, delay_ms))
         return True
 
-    async def _wait_and_update(self, session_id: str):
-        # Simply await 0.5s as requested for the local server
-        await asyncio.sleep(0.5)
-        
+    async def _wait_and_update(self, session_id: str, delay_ms: int):
+        await asyncio.sleep(delay_ms / 1000)
         callback = self.update_callback
         if callback:
-            # Execute the next update
             await callback(session_id)

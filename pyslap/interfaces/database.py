@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 
 class DatabaseInterface(ABC):
@@ -10,7 +10,7 @@ class DatabaseInterface(ABC):
     """
 
     @abstractmethod
-    def create(self, collection: str, data: Dict[str, Any]) -> str:
+    def create(self, collection: str, data: dict[str, Any]) -> str:
         """
         Creates a new record in the specified collection.
         Returns the unique identifier of the created record.
@@ -18,7 +18,7 @@ class DatabaseInterface(ABC):
         pass
 
     @abstractmethod
-    def read(self, collection: str, record_id: str) -> Optional[Dict[str, Any]]:
+    def read(self, collection: str, record_id: str) -> Optional[dict[str, Any]]:
         """
         Retrieves a record by its identifier from the specified collection.
         Returns the record data or None if not found.
@@ -26,7 +26,7 @@ class DatabaseInterface(ABC):
         pass
 
     @abstractmethod
-    def update(self, collection: str, record_id: str, data: Dict[str, Any]) -> bool:
+    def update(self, collection: str, record_id: str, data: dict[str, Any]) -> bool:
         """
         Updates an existing record with new data.
         Returns True if the update was successful, False otherwise.
@@ -42,7 +42,7 @@ class DatabaseInterface(ABC):
         pass
 
     @abstractmethod
-    def query(self, collection: str, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def query(self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
         """
         Retrieves records from a collection that match the provided filters.
         """

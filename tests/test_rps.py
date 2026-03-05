@@ -18,11 +18,11 @@ def _make_state(phase: str = "waiting_for_move", **overrides) -> GameState:
     return GameState(session_id="test", public_state=ps)
 
 
-def _make_action(choice: str = "R", player_id: str = "p1") -> Action:
+def _make_action(choice: str = "R", computer_choice: str = "S", player_id: str = "p1") -> Action:
     return Action(
         player_id=player_id,
         action_type="move",
-        payload={"choice": choice},
+        payload={"choice": choice, "computer_choice": computer_choice},
         timestamp=0.0,
     )
 
@@ -75,45 +75,40 @@ class TestValidateAction:
 
 # -------------------------------------------------------- apply_action
 class TestApplyAction:
-    @patch("games.rps.random.choice", return_value="S")
-    def test_player_wins_round(self, _mock):
+    def test_player_wins_round(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("R"), state)
+        state = rules.apply_action(_make_action("R", "S"), state)
         assert state.public_state["last_player_move"] == "R"
         assert state.public_state["last_computer_move"] == "S"
         assert state.public_state["last_round_winner"] == "player"
         assert state.public_state["player_score"] == 1
 
-    @patch("games.rps.random.choice", return_value="R")
-    def test_computer_wins_round(self, _mock):
+    def test_computer_wins_round(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("S"), state)
+        state = rules.apply_action(_make_action("S", "R"), state)
         assert state.public_state["last_round_winner"] == "computer"
         assert state.public_state["computer_score"] == 1
 
-    @patch("games.rps.random.choice", return_value="R")
-    def test_draw_no_score_change(self, _mock):
+    def test_draw_no_score_change(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("R"), state)
+        state = rules.apply_action(_make_action("R", "R"), state)
         assert state.public_state["last_round_winner"] == "draw"
         assert state.public_state["player_score"] == 0
         assert state.public_state["computer_score"] == 0
 
-    @patch("games.rps.random.choice", return_value="S")
-    def test_lowercase_input_applies(self, _mock):
+    def test_lowercase_input_applies(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("r"), state)
+        state = rules.apply_action(_make_action("r", "S"), state)
         assert state.public_state["last_player_move"] == "R"
         assert state.public_state["last_round_winner"] == "player"
 
 
 # ---------------------------------------------------- best-of-three winner
 class TestBestOfThree:
-    @patch("games.rps.random.choice", return_value="S")
-    def test_player_wins_match(self, _mock):
+    def test_player_wins_match(self):
         state = _make_state()
         # Win round 1
-        state = rules.apply_action(_make_action("R"), state)
+        state = rules.apply_action(_make_action("R", "S"), state)
         assert state.public_state["phase"] == "round_complete"
 
         # Transition to next round
@@ -121,17 +116,16 @@ class TestBestOfThree:
         assert state.public_state["phase"] == "waiting_for_move"
 
         # Win round 2
-        state = rules.apply_action(_make_action("R"), state)
+        state = rules.apply_action(_make_action("R", "S"), state)
         assert state.public_state["phase"] == "game_over"
         assert state.public_state["winner"] == "player"
         assert rules.check_game_over(state) is True
 
-    @patch("games.rps.random.choice", return_value="P")
-    def test_computer_wins_match(self, _mock):
+    def test_computer_wins_match(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("R"), state)  # lose
+        state = rules.apply_action(_make_action("R", "P"), state)  # lose
         state = rules.apply_update_tick(state, 500)
-        state = rules.apply_action(_make_action("R"), state)  # lose
+        state = rules.apply_action(_make_action("R", "P"), state)  # lose
         assert state.public_state["winner"] == "computer"
         assert rules.check_game_over(state) is True
 
@@ -157,14 +151,14 @@ class TestPrepareState:
     def test_merges_public_and_private(self):
         state = _make_state()
         state.private_state = {"p1": {"secret": "abc"}}
-        result = rules.prepare_state(state, "p1", [])
-        assert result["phase"] == "waiting_for_move"
-        assert result["secret"] == "abc"
+        result = state.to_player_state("p1")
+        assert result.public_state["phase"] == "waiting_for_move"
+        assert result.private_state["secret"] == "abc"
 
     def test_no_private_state(self):
         state = _make_state()
-        result = rules.prepare_state(state, "p1", [])
-        assert "phase" in result
+        result = state.to_player_state("p1")
+        assert "phase" in result.public_state
 
 
 # ------------------------------------------------ apply_update_tick init
