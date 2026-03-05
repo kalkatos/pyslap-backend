@@ -133,7 +133,6 @@ async def run_client() -> None:
                     )
 
                 case "round_complete":
-                    print("\nRound complete...")
                     move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
                     pm = ps.get("last_p1_move", "?")
                     cm = ps.get("last_p2_move", "?")
@@ -151,6 +150,20 @@ async def run_client() -> None:
                     print(f"\nScore: Player {ps.get('p1_score', 0)} - {ps.get('p2_score', 0)} Computer")
 
                 case "game_over":
+                    move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
+                    pm = ps.get("last_p1_move", "?")
+                    cm = ps.get("last_p2_move", "?")
+                    print(f"Player move:   {move_names.get(pm, pm)}")
+                    print(f"Computer move: {move_names.get(cm, cm)}")
+                    
+                    winner = ps.get("last_round_winner", "")
+                    if winner == "p1":
+                        print(">> You win this round!")
+                    elif winner == "p2":
+                        print(">> Computer wins this round!")
+                    else:
+                        print(">> It's a draw! Play again.")
+                        
                     print("\n" + "=" * 40)
                     print(f"  FINAL SCORE:  Player {ps['p1_score']} - {ps['p2_score']} Computer")
                     if ps.get("winner") == "p1":

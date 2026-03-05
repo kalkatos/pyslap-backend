@@ -3,7 +3,7 @@ import os
 import pytest
 from typing import Dict
 from local.sql_database import SQLiteDatabase
-from local.local_server import LocalScheduler
+from local.local_scheduler import LocalScheduler
 from local.local_entrypoint import LocalEntrypoint
 from pyslap.core.engine import PySlapEngine
 from games.rps import RpsGameRules
@@ -19,18 +19,9 @@ def setup_engine():
     # Based on pyslap/core/engine.py, it expects a dict of games_registry
     games = {"rps": RpsGameRules()}
     
-    # LocalScheduler needs an update_callback. PySlapEngine.process_update_loop is a sync method.
-    # However, LocalScheduler expects an async callback.
-    # We can wrap it.
-    
-    scheduler = LocalScheduler()
+    from unittest.mock import MagicMock
+    scheduler = MagicMock()
     engine = PySlapEngine(db, scheduler, games)
-    
-    async def update_callback(session_id: str):
-        engine.process_update_loop(session_id)
-        
-    scheduler.update_callback = update_callback
-    
     entrypoint = LocalEntrypoint(engine)
     
     # Create a game config for rps
@@ -46,8 +37,7 @@ def setup_engine():
     if os.path.exists(db_path):
         os.remove(db_path)
 
-@pytest.mark.asyncio
-async def test_local_entrypoint_flow(setup_engine):
+def test_local_entrypoint_flow(setup_engine):
     entrypoint, engine, db = setup_engine
     
     # 1. Create a session via engine (entrypoint doesn't have create_session in interface yet?)
@@ -78,8 +68,8 @@ async def test_local_entrypoint_flow(setup_engine):
     engine.process_update_loop(session_id)
     
     state = entrypoint.get_state(session_id, player_id, token)
-    assert state["round"] == 1
-    assert state["phase"] == "waiting_for_move"
+    assert state.public_state["round"] == 1
+    assert state.public_state["phase"] == "waiting_for_move"
     
     # 3. Send action via entrypoint
     entrypoint.send_action(session_id, player_id, token, "move", {"choice": "R"})

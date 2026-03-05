@@ -84,9 +84,10 @@ class RpsGameRules(GameRules):
 
         choices = []
         for player_id in state.private_state:
-            if state.private_state[player_id] is None or not "choice" in state.private_state[player_id]:
+            move = state.private_state[player_id]
+            if move is None or not "choice" in move or not move["choice"] or not move["choice"] in VALID_MOVES:
                 return state
-            choices.append(state.private_state[player_id]["choice"])
+            choices.append(move["choice"])
 
         result = _resolve_round(choices[0], choices[1])
 
@@ -135,6 +136,8 @@ class RpsGameRules(GameRules):
             ps["last_p1_move"] = None
             ps["last_p2_move"] = None
             ps["last_round_winner"] = None
+            for p in state.private_state:
+                state.private_state[p]["choice"] = ""
             return state
 
         # Timeout check while waiting for a move

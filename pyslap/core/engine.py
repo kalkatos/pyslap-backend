@@ -34,6 +34,7 @@ class PySlapEngine:
         self.games = games_registry
         self.validator = Validator(db)
         self.security = SecurityManager(db)
+        self.scheduler.set_callback(self.process_update_loop)
 
 
     def create_session(self, game_id: str, requester_id: str, requester_name: str) -> dict[str, Any] | None:
@@ -50,6 +51,7 @@ class PySlapEngine:
 
         # Fetch Game Configurations
         config_data = self.db.read("game_configs", game_id) or {}
+        config_data.pop("id", None)
         config = GameConfig(game_id=game_id, **config_data)
 
         # Create Session Object
@@ -153,6 +155,7 @@ class PySlapEngine:
             return
 
         config_data = self.db.read("game_configs", session.game_id) or {}
+        config_data.pop("id", None)
         config = GameConfig(game_id=session.game_id, **config_data)
 
         # 2. Check Session Timeouts

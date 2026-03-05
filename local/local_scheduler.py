@@ -1,5 +1,6 @@
 import asyncio
-from typing import Callable, Awaitable, Optional
+import inspect
+from typing import Callable, Any
 
 from pyslap.interfaces.scheduler import SchedulerInterface
 
@@ -8,13 +9,12 @@ class LocalScheduler(SchedulerInterface):
     A local implementation of SchedulerInterface that simply awaits
     using asyncio before executing the next update.
     """
-    
-    def __init__(self, update_callback: Optional[Callable[[str], Awaitable[None]]] = None):
-        """
-        :param update_callback: An async function `async def update_callback(session_id: str)`
-                                that executes the actual game loop/update logic.
-        """
-        self.update_callback = update_callback
+
+    def __init__(self):
+        self.update_callback = None
+
+    def set_callback(self, callback: Callable[[str], Any]) -> None:
+        self.update_callback = callback
 
     def schedule_next_update(self, session_id: str, delay_ms: int) -> bool:
         """
@@ -28,4 +28,6 @@ class LocalScheduler(SchedulerInterface):
         await asyncio.sleep(delay_ms / 1000)
         callback = self.update_callback
         if callback:
-            await callback(session_id)
+            res = callback(session_id)
+            if inspect.isawaitable(res):
+                await res
