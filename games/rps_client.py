@@ -27,9 +27,8 @@ COMPUTER_NAME = "Computer"
 GAME_ID = "rps"
 
 
-db_fd, db_path = tempfile.mkstemp(suffix=".db")
-os.close(db_fd)
-db = SQLiteDatabase(db_path=db_path)
+
+db = SQLiteDatabase()
 scheduler = LocalScheduler()  # callbacks unused; we drive the loop manually
 engine = PySlapEngine(
     db=db,
@@ -184,8 +183,7 @@ async def run_client() -> None:
         quit()
     finally:
         # Clean up temp database file
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+        db.dispose()
 
 
 if __name__ == "__main__":

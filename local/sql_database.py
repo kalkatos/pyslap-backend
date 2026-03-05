@@ -1,6 +1,8 @@
 import sqlite3
 import json
 import uuid
+import tempfile
+import os
 from typing import Any, Optional
 
 from pyslap.interfaces.database import DatabaseInterface
@@ -11,8 +13,8 @@ class SQLiteDatabase(DatabaseInterface):
     Stores all collections in a single 'records' table with JSON data.
     """
     
-    def __init__(self, db_path: str = "local_pyslap.db"):
-        self.db_path = db_path
+    def __init__(self):
+        self.db_path = "temp_database"
         self._init_db()
 
     def _get_connection(self):
@@ -35,6 +37,9 @@ class SQLiteDatabase(DatabaseInterface):
             conn.commit()
         finally:
             conn.close()
+    
+    def dispose(self):
+        os.unlink(self.db_path)
 
     def create(self, collection: str, data: dict[str, Any]) -> str:
         # Use an existing id if provided, otherwise generate a new one

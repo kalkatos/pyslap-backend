@@ -10,11 +10,14 @@ from games.rps import RpsGameRules
 
 @pytest.fixture
 def setup_engine():
-    db_path = "test_pyslap.db"
+    db_path = "temp_database"
     if os.path.exists(db_path):
-        os.remove(db_path)
+        try:
+            os.remove(db_path)
+        except OSError:
+            pass
     
-    db = SQLiteDatabase(db_path)
+    db = SQLiteDatabase()
     # RpsGameRules needs to be initialized. 
     # Based on pyslap/core/engine.py, it expects a dict of games_registry
     games = {"rps": RpsGameRules()}
@@ -34,8 +37,7 @@ def setup_engine():
     
     yield entrypoint, engine, db
     
-    if os.path.exists(db_path):
-        os.remove(db_path)
+    db.dispose()
 
 def test_local_entrypoint_flow(setup_engine):
     entrypoint, engine, db = setup_engine
