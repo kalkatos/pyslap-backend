@@ -1,0 +1,11 @@
+.git*
+.vscode
+local.settings.json
+test
+tests
+.venv
+venv
+.env
+.pytest_cache
+__pycache__
+.agents

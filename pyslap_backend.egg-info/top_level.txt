@@ -1,0 +1,5 @@
+azure
+games
+local
+pyslap
+tests

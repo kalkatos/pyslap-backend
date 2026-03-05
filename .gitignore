@@ -3,3 +3,6 @@
 .env
 .pytest_cache
 .agents
+local.settings.json
+.vscode
+.python_packages

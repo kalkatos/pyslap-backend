@@ -1,5 +1,5 @@
 [tool.pyright]
-include = ["pyslap", "tests", "local", "games"]
+include = ["pyslap", "tests", "local", "games", "azure"]
 extraPaths = ["."]
 
 [tool.pytest.ini_options]
@@ -9,4 +9,12 @@ pythonpath = ["."]
 name = "pyslap-backend"
 version = "0.1.0"
 description = "PYSLAP backend"
-dependencies = []
+dependencies = [
+    "azure-functions",
+    "azure-data-tables",
+    "azure-storage-queue",
+]
+
+[tool.setuptools]
+packages = ["pyslap", "azure", "games", "local", "tests"]
+
