@@ -20,6 +20,7 @@ def _make_state(phase: str = "waiting_for_move", **overrides) -> GameState:
 
 def _make_action(choice: str = "R", computer_choice: str = "S", player_id: str = "p1") -> Action:
     return Action(
+        session_id="test",
         player_id=player_id,
         action_type="move",
         payload={"choice": choice, "computer_choice": computer_choice},
@@ -36,14 +37,14 @@ class TestResolveRound:
         assert _resolve_round("R", "R") == "draw"
 
     def test_player_wins(self):
-        assert _resolve_round("R", "S") == "player"
-        assert _resolve_round("S", "P") == "player"
-        assert _resolve_round("P", "R") == "player"
+        assert _resolve_round("R", "S") == "p1"
+        assert _resolve_round("S", "P") == "p1"
+        assert _resolve_round("P", "R") == "p1"
 
     def test_computer_wins(self):
-        assert _resolve_round("R", "P") == "computer"
-        assert _resolve_round("S", "R") == "computer"
-        assert _resolve_round("P", "S") == "computer"
+        assert _resolve_round("R", "P") == "p2"
+        assert _resolve_round("S", "R") == "p2"
+        assert _resolve_round("P", "S") == "p2"
 
 
 # -------------------------------------------------------- validate_action
@@ -69,7 +70,7 @@ class TestValidateAction:
 
     def test_wrong_action_type(self):
         state = _make_state()
-        action = Action(player_id="p1", action_type="chat", payload={"choice": "R"}, timestamp=0)
+        action = Action(session_id="test", player_id="p1", action_type="chat", payload={"choice": "R"}, timestamp=0)
         assert rules.validate_action(action, state) is False
 
 
@@ -77,30 +78,34 @@ class TestValidateAction:
 class TestApplyAction:
     def test_player_wins_round(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("R", "S"), state)
-        assert state.public_state["last_player_move"] == "R"
-        assert state.public_state["last_computer_move"] == "S"
-        assert state.public_state["last_round_winner"] == "player"
-        assert state.public_state["player_score"] == 1
+        state = rules.apply_action(_make_action("R", player_id="p1"), state)
+        state = rules.apply_action(_make_action("S", player_id="p2"), state)
+        assert state.public_state["last_p1_move"] == "R"
+        assert state.public_state["last_p2_move"] == "S"
+        assert state.public_state["last_round_winner"] == "p1"
+        assert state.public_state["p1_score"] == 1
 
     def test_computer_wins_round(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("S", "R"), state)
-        assert state.public_state["last_round_winner"] == "computer"
-        assert state.public_state["computer_score"] == 1
+        state = rules.apply_action(_make_action("S", player_id="p1"), state)
+        state = rules.apply_action(_make_action("R", player_id="p2"), state)
+        assert state.public_state["last_round_winner"] == "p2"
+        assert state.public_state["p2_score"] == 1
 
     def test_draw_no_score_change(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("R", "R"), state)
+        state = rules.apply_action(_make_action("R", player_id="p1"), state)
+        state = rules.apply_action(_make_action("R", player_id="p2"), state)
         assert state.public_state["last_round_winner"] == "draw"
-        assert state.public_state["player_score"] == 0
-        assert state.public_state["computer_score"] == 0
+        assert state.public_state["p1_score"] == 0
+        assert state.public_state["p2_score"] == 0
 
     def test_lowercase_input_applies(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("r", "S"), state)
-        assert state.public_state["last_player_move"] == "R"
-        assert state.public_state["last_round_winner"] == "player"
+        state = rules.apply_action(_make_action("r", player_id="p1"), state)
+        state = rules.apply_action(_make_action("S", player_id="p2"), state)
+        assert state.public_state["last_p1_move"] == "R"
+        assert state.public_state["last_round_winner"] == "p1"
 
 
 # ---------------------------------------------------- best-of-three winner
@@ -108,7 +113,8 @@ class TestBestOfThree:
     def test_player_wins_match(self):
         state = _make_state()
         # Win round 1
-        state = rules.apply_action(_make_action("R", "S"), state)
+        state = rules.apply_action(_make_action("R", player_id="p1"), state)
+        state = rules.apply_action(_make_action("S", player_id="p2"), state)
         assert state.public_state["phase"] == "round_complete"
 
         # Transition to next round
@@ -116,17 +122,20 @@ class TestBestOfThree:
         assert state.public_state["phase"] == "waiting_for_move"
 
         # Win round 2
-        state = rules.apply_action(_make_action("R", "S"), state)
+        state = rules.apply_action(_make_action("R", player_id="p1"), state)
+        state = rules.apply_action(_make_action("S", player_id="p2"), state)
         assert state.public_state["phase"] == "game_over"
-        assert state.public_state["winner"] == "player"
+        assert state.public_state["winner"] == "p1"
         assert rules.check_game_over(state) is True
 
     def test_computer_wins_match(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("R", "P"), state)  # lose
+        state = rules.apply_action(_make_action("R", player_id="p1"), state)  # lose
+        state = rules.apply_action(_make_action("P", player_id="p2"), state)  # lose
         state = rules.apply_update_tick(state, 500)
-        state = rules.apply_action(_make_action("R", "P"), state)  # lose
-        assert state.public_state["winner"] == "computer"
+        state = rules.apply_action(_make_action("R", player_id="p1"), state)  # lose
+        state = rules.apply_action(_make_action("P", player_id="p2"), state)  # lose
+        assert state.public_state["winner"] == "p2"
         assert rules.check_game_over(state) is True
 
 

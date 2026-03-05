@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from typing import Any
 from local.sql_database import SQLiteDatabase
-from local.local_server import LocalScheduler
+from local.local_scheduler import LocalScheduler
 from local.local_entrypoint import LocalEntrypoint
 from pyslap.core.engine import PySlapEngine
 from games.rps import RpsGameRules

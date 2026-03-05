@@ -24,5 +24,5 @@ Instructions for the implementation:
 - When the session is created, player information will be passed with additional data, such as player id and name. This information will be used to identify the player.
 - The game state may be different for each requester, so the game rules implementation must be able to prepare a different game state for each requester. There will be public state variables and private state variables. The public state variables will be sent to all requesters, while the private state variables will be sent only to the requester who owns them.
 - There should be a way to verify if the requester is who they claim to be, so the code must check the requester's id and name against the database. And a security token should be generated to verify the requester's identity. This token will be sent with each request and checked against the database.
-- 
+- There is logic for the client and logic for the server, so the code must be aware of the difference between them. The client must not have access to any of the core logic, they only have access to the local implementation of the interfaces.
 - 

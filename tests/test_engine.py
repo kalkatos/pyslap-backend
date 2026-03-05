@@ -9,6 +9,9 @@ from pyslap.models.domain import Action, GameState, SessionStatus
 
 # --- Dummy Game Rules for Testing ---
 class DummyGame(GameRules):
+    def create_game_state(self, players: list) -> GameState:
+        return GameState(session_id="", public_state={"ticks": 0}, private_state={})
+
     def validate_action(self, action: Action, state: GameState) -> bool:
         return action.action_type == "valid_move"
 

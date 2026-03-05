@@ -20,6 +20,7 @@ class Player:
 @dataclass
 class Action:
     """An action taken by a player."""
+    session_id: str
     player_id: str
     action_type: str
     payload: dict[str, Any]

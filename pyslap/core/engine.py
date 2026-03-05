@@ -116,6 +116,7 @@ class PySlapEngine:
             return False
 
         action = Action(
+            session_id=session_id,
             player_id=player_id, 
             action_type=action_type, 
             payload=payload, 
@@ -183,6 +184,7 @@ class PySlapEngine:
         # Second, apply valid player actions
         for raw_act in pending_actions:
             action = Action(
+                session_id=session_id,
                 player_id=raw_act["player_id"],
                 action_type=raw_act["action_type"],
                 payload=raw_act["payload"],

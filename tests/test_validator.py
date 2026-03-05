@@ -52,6 +52,7 @@ def test_validator_log_action_success():
     validator = Validator(mock_db)
     
     action = Action(
+        session_id="test-session",
         player_id="player1",
         action_type="move",
         payload={"x": 1, "y": 2},

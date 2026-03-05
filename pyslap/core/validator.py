@@ -36,10 +36,12 @@ class Validator:
         """
         try:
             action_data = {
+                "session_id": action.session_id,
                 "player_id": action.player_id,
                 "action_type": action.action_type,
                 "payload": action.payload,
-                "timestamp": action.timestamp
+                "timestamp": action.timestamp,
+                "processed": False
             }
             self.db.create(collection, action_data)
             return True

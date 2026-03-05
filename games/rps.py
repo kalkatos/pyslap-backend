@@ -3,7 +3,6 @@ Rock Paper Scissors - GameRules implementation for the pyslap backend.
 Best-of-three between a player and a computer with random moves.
 """
 
-import random
 from typing import Any
 
 from pyslap.core.game_rules import GameRules
@@ -49,7 +48,7 @@ class RpsGameRules(GameRules):
     def create_game_state(self, players: list[Player]) -> GameState:
         private_state = {}
         for player in players:
-            private_state[player.player_id] = {"move": ""}
+            private_state[player.player_id] = {"choice": ""}
         return GameState(
             session_id="",
             public_state={
@@ -78,7 +77,7 @@ class RpsGameRules(GameRules):
 
     def apply_action(self, action: Action, state: GameState) -> GameState:
         choice = action.payload["choice"].upper()
-        state.private_state[action.player_id] = choice
+        state.private_state[action.player_id] = {"choice": choice}
 
         if len(state.private_state) < 2:
             return state
