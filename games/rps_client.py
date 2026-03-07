@@ -140,17 +140,6 @@ async def run_client () -> None:
                         payload={"choice": choice},
                     )
 
-                    # Send the computer's random move
-                    computer_choice = random.choice(["R", "P", "S"])
-                    await _send_action(
-                        client,
-                        session_id=session_id,
-                        player_id=COMPUTER_ID,
-                        token=token,
-                        action_type="move",
-                        payload={"choice": computer_choice},
-                    )
-
                 case "round_complete":
                     move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
                     pm = ps.get("last_p1_move", "?")
