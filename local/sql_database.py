@@ -1,17 +1,19 @@
 import sqlite3
 import json
 import uuid
-import tempfile
 import os
+import time
 from typing import Any, Optional
 
 from pyslap.interfaces.database import DatabaseInterface
 
+
 class SQLiteDatabase(DatabaseInterface):
     """
     A SQLite implementation of DatabaseInterface for local testing.
-    Stores all collections in a single 'records' table with JSON data.
+    Stores each collection in its own table with JSON data.
     """
+
     def __init__(self, db_path: str = "temp_database"):
         self.db_path = db_path
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
@@ -21,19 +23,17 @@ class SQLiteDatabase(DatabaseInterface):
     def _get_connection(self):
         return self._conn
 
+    def _table_exists(self, conn, table_name: str) -> bool:
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        )
+        return cursor.fetchone() is not None
+
     def _init_db(self):
-        """Initializes the generic records table if it doesn't exist."""
-        conn = self._get_connection()
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS records (
-                collection TEXT,
-                record_id TEXT,
-                data TEXT,
-                PRIMARY KEY (collection, record_id)
-            )
-        ''')
-        conn.commit()
-    
+        """No generic tables to initialize upfront."""
+        pass
+
     def dispose(self):
         self._conn.close()
         try:
@@ -49,8 +49,11 @@ class SQLiteDatabase(DatabaseInterface):
 
         conn = self._get_connection()
         conn.execute(
-            "INSERT INTO records (collection, record_id, data) VALUES (?, ?, ?)",
-            (collection, record_id, json.dumps(data))
+            f'CREATE TABLE IF NOT EXISTS "{collection}" (record_id TEXT PRIMARY KEY, timestamp REAL, data TEXT)'
+        )
+        conn.execute(
+            f'INSERT OR REPLACE INTO "{collection}" (record_id, timestamp, data) VALUES (?, ?, ?)',
+            (record_id, time.time(), json.dumps(data)),
         )
         conn.commit()
 
@@ -58,30 +61,37 @@ class SQLiteDatabase(DatabaseInterface):
 
     def read(self, collection: str, record_id: str) -> Optional[dict[str, Any]]:
         conn = self._get_connection()
+        if not self._table_exists(conn, collection):
+            return None
+
         cursor = conn.execute(
-            "SELECT data FROM records WHERE collection = ? AND record_id = ?",
-            (collection, record_id)
+            f'SELECT data FROM "{collection}" WHERE record_id = ?', (record_id,)
         )
         row = cursor.fetchone()
 
         if row:
-            return json.loads(row['data'])
+            return json.loads(row["data"])
         return None
 
     def update(self, collection: str, record_id: str, data: dict[str, Any]) -> bool:
         conn = self._get_connection()
+        if not self._table_exists(conn, collection):
+            return False
+
         cursor = conn.execute(
-            "UPDATE records SET data = ? WHERE collection = ? AND record_id = ?",
-            (json.dumps(data), collection, record_id)
+            f'UPDATE "{collection}" SET timestamp = ?, data = ? WHERE record_id = ?',
+            (time.time(), json.dumps(data), record_id),
         )
         conn.commit()
         return cursor.rowcount > 0
 
     def delete(self, collection: str, record_id: str) -> bool:
         conn = self._get_connection()
+        if not self._table_exists(conn, collection):
+            return False
+
         cursor = conn.execute(
-            "DELETE FROM records WHERE collection = ? AND record_id = ?",
-            (collection, record_id)
+            f'DELETE FROM "{collection}" WHERE record_id = ?', (record_id,)
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -90,14 +100,14 @@ class SQLiteDatabase(DatabaseInterface):
         # For a local mock DB, it's safer to fetch all collection items
         # and filter in Python rather than dealing with SQLite JSON intricacies.
         conn = self._get_connection()
-        cursor = conn.execute(
-            "SELECT data FROM records WHERE collection = ?", 
-            (collection,)
-        )
+        if not self._table_exists(conn, collection):
+            return []
+
+        cursor = conn.execute(f'SELECT data FROM "{collection}"')
 
         results = []
         for row in cursor.fetchall():
-            data = json.loads(row['data'])
+            data = json.loads(row["data"])
 
             # Check if all filters match
             match = True

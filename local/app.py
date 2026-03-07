@@ -11,6 +11,8 @@ from games.rps import RpsGameRules
 
 # Initialize components
 db = SQLiteDatabase()
+db.create("players", {"id": "player1", "name": "Player 1", "token": "fake_token"})
+db.create("players", {"id": "computer", "name": "Computer", "token": "fake_token"})
 scheduler = LocalScheduler()
 
 # Register games
@@ -30,6 +32,7 @@ class StartSessionRequest(BaseModel):
     game_id: str
     player_id: str
     player_name: str
+    custom_data: Dict[str, Any] | None = None
 
 class ActionRequest(BaseModel):
     session_id: str
@@ -54,7 +57,7 @@ class DataRequest(BaseModel):
 
 @app.post("/session")
 async def start_session(req: StartSessionRequest):
-    result = entrypoint.start_session(req.game_id, req.player_id, req.player_name)
+    result = entrypoint.start_session(req.game_id, req.player_id, req.player_name, req.custom_data)
     if not result:
         raise HTTPException(status_code=400, detail="Failed to start session. Check game_id or player details.")
     return result

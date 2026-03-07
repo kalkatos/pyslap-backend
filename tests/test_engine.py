@@ -4,13 +4,13 @@ from unittest.mock import MagicMock
 
 from pyslap.core.engine import PySlapEngine
 from pyslap.core.game_rules import GameRules
-from pyslap.models.domain import Action, GameState, SessionStatus
+from pyslap.models.domain import Action, GameState, SessionStatus, Player
 
 
 # --- Dummy Game Rules for Testing ---
 class DummyGame(GameRules):
-    def create_game_state(self, players: list) -> GameState:
-        return GameState(session_id="", public_state={"ticks": 0}, private_state={})
+    def create_game_state(self, players: list[Player], custom_data: dict[str, Any]) -> GameState:
+        return GameState(session_id="", public_state={"phase": "waiting"}, private_state={})
 
     def validate_action(self, action: Action, state: GameState) -> bool:
         return action.action_type == "valid_move"

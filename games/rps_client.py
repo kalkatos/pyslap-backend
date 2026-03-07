@@ -6,7 +6,6 @@ Usage:
 """
 
 import asyncio
-import random
 import sys
 from typing import Any
 
@@ -31,13 +30,17 @@ GAME_ID = "rps"
 # HTTP helpers (async)
 # ---------------------------------------------------------------------------
 
-async def _start_session (client: httpx.AsyncClient, game_id: str, player_id: str, player_name: str) -> dict[str, Any] | None:
-    resp = await client.post(f"{BASE_URL}/session", json={
+async def _start_session (client: httpx.AsyncClient, game_id: str, player_id: str, player_name: str, custom_data: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    payload: dict[str, Any] = {
         "game_id": game_id,
         "player_id": player_id,
         "player_name": player_name,
-    })
+    }
+    if custom_data:
+        payload["custom_data"] = custom_data
+    resp = await client.post(f"{BASE_URL}/session", json=payload)
     if resp.status_code != 200:
+        print(f"Error starting session: {resp.status_code} - {resp.text}")
         return None
     return resp.json()
 
@@ -67,7 +70,7 @@ async def _send_action (client: httpx.AsyncClient, session_id: str, player_id: s
 # Input helper
 # ---------------------------------------------------------------------------
 
-async def _read_input (prompt: str, timeout: float) -> str | None:
+async def _read_input (prompt: str, timeout: float) -> str:
     """Read a line from stdin with a timeout (seconds). Returns None on timeout."""
     loop = asyncio.get_event_loop()
     print(prompt, end="", flush=True)
@@ -76,7 +79,7 @@ async def _read_input (prompt: str, timeout: float) -> str | None:
         result = await asyncio.wait_for(future, timeout=timeout)
         return result.strip()
     except asyncio.TimeoutError:
-        return None
+        return "<timeout>"
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +89,7 @@ async def _read_input (prompt: str, timeout: float) -> str | None:
 async def run_client () -> None:
     async with httpx.AsyncClient() as client:
         # ---- create session ----
-        result = await _start_session(client, GAME_ID, PLAYER_ID, PLAYER_NAME)
+        result = await _start_session(client, GAME_ID, PLAYER_ID, PLAYER_NAME, custom_data={"use_bot": True})
         if result is None:
             print("Failed to create session. Is the server running?")
             return
@@ -119,16 +122,21 @@ async def run_client () -> None:
                 case "waiting_for_move":
                     rnd = ps.get("round", "?")
                     print(f"\n--- Round {rnd} ---")
-                    user_input = await _read_input("Enter your move (R/P/S): ", timeout=10.0)
-
-                    if user_input is None:
+                    user_input = "<empty>"
+                    choice = ""
+                    
+                    while True:
+                        user_input = await _read_input("Enter your move (R/P/S): ", timeout=10.0)
+                        if user_input == "<timeout>":
+                            break
+                        choice = user_input.upper()
+                        if choice in ("R", "P", "S"):
+                            break
+                        print(f"Invalid move '{user_input}'. Please enter R, P, or S.")
+                    
+                    if user_input == "<timeout>":
                         print("\nNo move made within 10 seconds, terminating match.")
                         break
-
-                    choice = user_input.upper()
-                    if choice not in ("R", "P", "S"):
-                        print(f"Invalid move '{user_input}'. Please enter R, P, or S.")
-                        continue
 
                     # Send the player's move
                     await _send_action(

@@ -48,13 +48,18 @@ class RpsGameRules(GameRules):
     def get_phase_gates(self) -> set[str]:
         return {"round_complete"}
 
-    def create_game_state(self, players: list[Player]) -> GameState:
+    def create_game_state(self, players: list[Player], custom_data: dict[str, Any]) -> GameState:
         private_state = {}
         for player in players:
             private_state[player.player_id] = {"choice": ""}
+        use_bot = custom_data.get("use_bot", False)
+        if use_bot:
+            private_state["computer"] = {"choice": ""}
+
         return GameState(
             session_id="",
             public_state={
+                "use_bot": use_bot,
                 "round": 1,
                 "p1_score": 0,
                 "p2_score": 0,
@@ -85,10 +90,21 @@ class RpsGameRules(GameRules):
         if len(state.private_state) < 2:
             return state
 
+        import random
+        ps = state.public_state
+        use_bot = ps.get("use_bot", False)
+
+        if use_bot and len(state.private_state) == 2 and "computer" in state.private_state:
+            # If the human player just made a move, automatically generate the computer's move
+            # Check if the human has a move
+            human_id = [p for p in state.private_state if p != "computer"][0]
+            if state.private_state[human_id].get("choice") in VALID_MOVES:
+                state.private_state["computer"]["choice"] = random.choice(list(VALID_MOVES))
+
         choices = []
         for player_id in state.private_state:
             move = state.private_state[player_id]
-            if move is None or not "choice" in move or not move["choice"] or not move["choice"] in VALID_MOVES:
+            if move is None or "choice" not in move or not move["choice"] or move["choice"] not in VALID_MOVES:
                 return state
             choices.append(move["choice"])
 

@@ -12,9 +12,9 @@ class GameRules(ABC):
     """
 
     @abstractmethod
-    def create_game_state(self, players: list[Player]) -> GameState:
+    def create_game_state(self, players: list[Player], custom_data: dict[str, Any]) -> GameState:
         """
-        Creates a new GameState for the specific game.
+        Creates the initial game state. for the specific game.
         """
         pass
 

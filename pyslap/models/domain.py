@@ -64,5 +64,6 @@ class Session:
     game_id: str
     status: SessionStatus = SessionStatus.ACTIVE
     players: dict[str, Player] = field(default_factory=dict)
+    custom_data: dict[str, Any] = field(default_factory=dict)
     created_at: float = 0.0
     last_action_at: float = 0.0
