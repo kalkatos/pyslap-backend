@@ -83,6 +83,9 @@ class PySlapEngine:
         session_id = str(uuid.uuid4())
         current_time = time.time()
 
+        # Generate a stateless session token for the player
+        player.token = self.security.generate_session_token(player.player_id, session_id)
+
         session = Session(
             session_id=session_id,
             game_id=game_id,

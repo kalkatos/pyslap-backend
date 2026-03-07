@@ -1,3 +1,7 @@
+---
+trigger: always_on
+---
+
 # PySlap Roadmap & Technical Implementation Guide
 
 This document provides technical blueprints for future PySlap enhancements. Refer to these items for subsequent development phases.
@@ -6,7 +10,7 @@ This document provides technical blueprints for future PySlap enhancements. Refe
 
 ## 🛡️ Security Improvements
 
-### 1. Stateless Session Tokens (JWT)
+### 1. Stateless Session Tokens (JWT) - DONE ✅ -
 *   **Description**: Replace random string tokens with signed JWTs to enable stateless verification of player and session identity without database lookups on every request.
 *   **Modules**: `PyJWT` or `python-jose`.
 *   **Changes**:

@@ -72,11 +72,12 @@ def test_engine_register_action_success():
     
     # Mock session fetch — must include player with matching token for the new security check
     current_time = time.time()
+    valid_token = engine.security.generate_session_token("p1", "sid_1")
     mock_session = {
         "session_id": "sid_1",
         "game_id": "dummy",
         "status": SessionStatus.ACTIVE,
-        "players": {"p1": {"player_id": "p1", "name": "Player", "token": "valid-token"}},
+        "players": {"p1": {"player_id": "p1", "name": "Player", "token": valid_token}},
         "created_at": current_time,
         "last_action_at": current_time - 1000
     }
@@ -85,7 +86,7 @@ def test_engine_register_action_success():
     result = engine.register_action(
         session_id="sid_1", 
         player_id="p1", 
-        token="valid-token", 
+        token=valid_token, 
         action_type="move", 
         payload={"x": 5}
     )

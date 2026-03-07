@@ -1,17 +1,19 @@
+import jwt
 from unittest.mock import MagicMock
 
 from pyslap.core.security import SecurityManager
 
 
-def test_generate_token():
+def test_generate_session_token():
     mock_db = MagicMock()
-    security = SecurityManager(mock_db)
+    security = SecurityManager(mock_db, secret_key="test_secret_32bytes_min_key_length")
     
-    token1 = security.generate_token()
-    token2 = security.generate_token()
+    token = security.generate_session_token(player_id="p1", session_id="sid_1")
     
-    assert token1 != token2
-    assert len(token1) == 64  # secrets.token_hex(32) outputs 64 characters
+    payload = jwt.decode(token, "test_secret_32bytes_min_key_length", algorithms=["HS256"])
+    assert payload["player_id"] == "p1"
+    assert payload["session_id"] == "sid_1"
+    assert "exp" in payload
 
 
 def test_verify_identity_success():
@@ -24,8 +26,7 @@ def test_verify_identity_success():
     assert player is not None
     assert player.player_id == "p1"
     assert player.name == "Alice"
-    assert player.token is not None
-    assert len(player.token) == 64
+    assert player.token is None  # Token is not generated here anymore
 
 
 def test_verify_identity_unknown_player():
@@ -40,11 +41,12 @@ def test_verify_identity_unknown_player():
 
 def test_validate_request_token():
     mock_db = MagicMock()
-    security = SecurityManager(mock_db)
+    security = SecurityManager(mock_db, secret_key="test_secret_32bytes_min_key_length")
     
-    # Simulate a session where p1 has token "abc123"
-    mock_db.read.return_value = {
-        "players": {"p1": {"player_id": "p1", "name": "Alice", "token": "abc123"}}
-    }
-    assert security.validate_request_token("sid_1", "p1", "abc123") is True
-    assert security.validate_request_token("sid_1", "p1", "wrong-token") is False
+    # Generate a valid token for player 'p1' in session 'sid_1'
+    valid_token = security.generate_session_token(player_id="p1", session_id="sid_1")
+    
+    assert security.validate_request_token("sid_1", "p1", valid_token) is True
+    assert security.validate_request_token("sid_1", "wrong_player", valid_token) is False
+    assert security.validate_request_token("wrong_session", "p1", valid_token) is False
+    assert security.validate_request_token("sid_1", "p1", "invalid.jwt.token") is False
