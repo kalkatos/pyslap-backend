@@ -8,16 +8,13 @@ from local.local_entrypoint import LocalEntrypoint
 from pyslap.core.engine import PySlapEngine
 from games.rps import RpsGameRules
 
+import uuid
+
 @pytest.fixture
 def setup_engine():
-    db_path = "temp_database"
-    if os.path.exists(db_path):
-        try:
-            os.remove(db_path)
-        except OSError:
-            pass
+    db_path = f"temp_database_{uuid.uuid4().hex}"
     
-    db = SQLiteDatabase()
+    db = SQLiteDatabase(db_path)
     # RpsGameRules needs to be initialized. 
     # Based on pyslap/core/engine.py, it expects a dict of games_registry
     games = {"rps": RpsGameRules()}
@@ -86,6 +83,32 @@ def test_local_entrypoint_flow(setup_engine):
     action_data = entrypoint.get_data(session_id, player_id, token, "actions", {})
     assert len(action_data) == 1
     assert action_data[0]["action_type"] == "move"
+
+def test_local_entrypoint_registers_ack(setup_engine):
+    entrypoint, engine, db = setup_engine
+    
+    player_id = "player1"
+    player_name = "Alex"
+    db.create("players", {"id": player_id, "name": player_name, "token": "secret_token"})
+    session_info = engine.create_session("rps", player_id, player_name)
+    session_id = session_info["session_id"]
+    token = session_info["token"]
+    
+    # Manually transition state to a gated phase ("round_complete" for RPS)
+    state_data = db.read("states", session_id)
+    state_data["public_state"]["phase"] = "round_complete"
+    state_data["phase_ack"] = {player_id: False}
+    db.update("states", session_id, state_data)
+    
+    # 1. Fetch state - this should trigger the ack registration
+    state = entrypoint.get_state(session_id, player_id, token)
+    
+    # 2. Verify state returned has the phase
+    assert state.public_state["phase"] == "round_complete"
+    
+    # 3. Verify DB was updated with ack
+    updated_state_data = db.read("states", session_id)
+    assert updated_state_data["phase_ack"][player_id] is True
 
 if __name__ == "__main__":
     # Manual run if needed

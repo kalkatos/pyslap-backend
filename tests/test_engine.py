@@ -70,16 +70,17 @@ def test_engine_register_action_success():
     mock_db = MagicMock()
     engine = PySlapEngine(db=mock_db, scheduler=MagicMock(), games_registry={})
     
-    # Mock session fetch
+    # Mock session fetch — must include player with matching token for the new security check
     current_time = time.time()
-    mock_db.read.return_value = {
+    mock_session = {
         "session_id": "sid_1",
         "game_id": "dummy",
         "status": SessionStatus.ACTIVE,
-        "players": {},
+        "players": {"p1": {"player_id": "p1", "name": "Player", "token": "valid-token"}},
         "created_at": current_time,
         "last_action_at": current_time - 1000
     }
+    mock_db.read.return_value = mock_session
     
     result = engine.register_action(
         session_id="sid_1", 
@@ -155,3 +156,106 @@ def test_process_update_loop_executes_actions():
     
     assert updated_state["public_state"]["ticks"] == 2 # 1+1 tick applied
     assert updated_state["public_state"]["last_move"] == "did_thing" # only applied valid action
+
+def test_engine_skips_tick_on_gated_phase():
+    mock_db = MagicMock()
+    mock_scheduler = MagicMock()
+    
+    # Game that gates the "gated" phase
+    class GatedGame(DummyGame):
+        def get_phase_gates(self) -> set[str]:
+            return {"gated"}
+            
+    games = {"gated_game": GatedGame()}
+    engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
+    
+    current_time = time.time()
+    session_id = "sid_1"
+    
+    def mock_db_read(collection, doc_id):
+        if collection == "sessions":
+            return {
+                "session_id": session_id,
+                "game_id": "gated_game",
+                "status": SessionStatus.ACTIVE,
+                "players": {"p1":{"name": "Alice"}, "p2":{"name": "Bob"}},
+                "created_at": current_time,
+                "last_action_at": current_time
+            }
+        elif collection == "game_configs":
+            return {"update_interval_ms": 600, "phase_ack_timeout_sec": 10}
+        elif collection == "states":
+            return {
+                "session_id": session_id,
+                "last_update_timestamp": current_time - 1.0,
+                "public_state": {"phase": "gated", "ticks": 1},
+                "private_state": {},
+                # p1 has acked, p2 has NOT
+                "phase_ack": {"p1": True, "p2": False},
+                # Inside timeout window
+                "phase_ack_since": current_time - 5.0
+            }
+        return None
+        
+    mock_db.read.side_effect = mock_db_read
+    mock_db.query.return_value = [] # no actions
+    
+    # Execute loop
+    engine.process_update_loop(session_id)
+    
+    # Verify State Update
+    # Because skip_tick was True and no actions were applied, the state shouldn't even be resaved!
+    state_updates = [call for call in mock_db.update.call_args_list if call[0][0] == "states"]
+    assert len(state_updates) == 0
+
+def test_engine_force_clears_gate_on_timeout():
+    mock_db = MagicMock()
+    mock_scheduler = MagicMock()
+    
+    class GatedGame(DummyGame):
+        def get_phase_gates(self) -> set[str]:
+            return {"gated"}
+            
+    games = {"gated_game": GatedGame()}
+    engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
+    
+    current_time = time.time()
+    session_id = "sid_1"
+    
+    def mock_db_read(collection, doc_id):
+        if collection == "sessions":
+            return {
+                "session_id": session_id,
+                "game_id": "gated_game",
+                "status": SessionStatus.ACTIVE,
+                "players": {"p1":{"name": "Alice"}, "p2":{"name": "Bob"}},
+                "created_at": current_time,
+                "last_action_at": current_time
+            }
+        elif collection == "game_configs":
+            return {"update_interval_ms": 600, "phase_ack_timeout_sec": 10}
+        elif collection == "states":
+            return {
+                "session_id": session_id,
+                "last_update_timestamp": current_time - 1.0,
+                "public_state": {"phase": "gated", "ticks": 1},
+                "private_state": {},
+                # Neither player acked
+                "phase_ack": {"p1": False, "p2": False},
+                # Timeout EXPIRED (started 15s ago)
+                "phase_ack_since": current_time - 15.0
+            }
+        return None
+        
+    mock_db.read.side_effect = mock_db_read
+    mock_db.query.return_value = [] 
+    
+    engine.process_update_loop(session_id)
+    
+    state_updates = [call for call in mock_db.update.call_args_list if call[0][0] == "states"]
+    assert len(state_updates) == 1
+    updated_state = state_updates[0][0][2]
+    
+    # Because timeout expired, skip_tick should be False,
+    # so apply_update_tick IS called.
+    assert updated_state["public_state"]["ticks"] == 2

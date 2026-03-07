@@ -52,3 +52,12 @@ class GameRules(ABC):
         """
         pass
 
+    def get_phase_gates(self) -> set[str]:
+        """
+        Returns a set of phase names that must be seen by all session
+        players before apply_update_tick is allowed to transition them.
+        Override in subclasses. Default: no gated phases.
+        """
+        return set()
+
+

@@ -23,6 +23,8 @@ class PySlapEngine:
     validator: Validator
     security: SecurityManager
 
+    MINIMUM_UPDATE_INTERVAL_MS = 100
+
     def __init__(
             self,
             db: DatabaseInterface,
@@ -35,6 +37,26 @@ class PySlapEngine:
         self.validator = Validator(db)
         self.security = SecurityManager(db)
         self.scheduler.set_callback(self.process_update_loop)
+        self._cleanup_old_records()
+
+    def _cleanup_old_records (self, max_age_sec: int = 5 * 3600) -> None:
+        """Deletes sessions older than max_age_sec (default 5 hours) and their related data."""
+        cutoff = time.time() - max_age_sec
+        old_sessions = [
+            s for s in self.db.query("sessions", {})
+            if s.get("created_at", float("inf")) < cutoff
+        ]
+        for session in old_sessions:
+            session_id = session["id"]
+
+            # Delete all actions tied to this session
+            old_actions = self.db.query("actions", {"session_id": session_id})
+            for action in old_actions:
+                self.db.delete("actions", action["id"])
+
+            # Delete state and session records
+            self.db.delete("states", session_id)
+            self.db.delete("sessions", session_id)
 
 
     def create_session(self, game_id: str, requester_id: str, requester_name: str) -> dict[str, Any] | None:
@@ -71,6 +93,7 @@ class PySlapEngine:
         game_state = self.games[game_id].create_game_state([player])
         game_state.session_id = session_id
         game_state.last_update_timestamp = current_time
+        game_state.phase_ack = {}
 
         # Save to database
         session_data = asdict(session)
@@ -98,7 +121,7 @@ class PySlapEngine:
         """
         Registers an action for the next update loop.
         """
-        if not self.security.validate_request_token(player_id, token):
+        if not self.security.validate_request_token(session_id, player_id, token):
             return False
 
         # Load session to validate
@@ -179,10 +202,33 @@ class PySlapEngine:
         pending_actions = self.db.query("actions", {"session_id": session_id, "processed": False})
 
         # 4. Apply Updates
-        # First, apply regular time-based updates (if any)
-        delta_ms = int((current_time - state.last_update_timestamp) * 1000)
-        state = rules.apply_update_tick(state, delta_ms)
-        state.last_update_timestamp = current_time
+        
+        # Track phase for version bumping
+        original_phase = state.public_state.get("phase")
+        
+        # Phase Gate Check
+        gated_phases = rules.get_phase_gates()
+        current_phase = state.public_state.get("phase")
+        skip_tick = False
+        
+        if current_phase in gated_phases:
+            # Check if all actual players (excluding AI added later) have acked
+            session_players = set([p for p in session.players.keys()])
+            unacked_players = [p for p in session_players if not state.phase_ack.get(p, False)]
+            
+            if unacked_players:
+                # Check for timeout
+                if current_time - state.phase_ack_since >= config.phase_ack_timeout_sec:
+                    # Force-clear the gate
+                    pass # We proceed with the tick
+                else:
+                    skip_tick = True
+
+        # First, apply regular time-based updates (if any) and not gated
+        if not skip_tick:
+            delta_ms = int((current_time - state.last_update_timestamp) * 1000)
+            state = rules.apply_update_tick(state, delta_ms)
+            state.last_update_timestamp = current_time
 
         # Second, apply valid player actions
         for raw_act in pending_actions:
@@ -199,6 +245,16 @@ class PySlapEngine:
             # Mark action as processed
             raw_act["processed"] = True
             self.db.update("actions", raw_act["id"], raw_act)
+            
+        # Version Bump & Ack Reset only when the phase changed.
+        # Partial actions (e.g. one of two players moved) and internal timer changes
+        # do NOT bump the version — only a phase transition does.
+        new_phase = state.public_state.get("phase")
+        if new_phase != original_phase:
+            state.state_version += 1
+            # Reset acks for session players
+            state.phase_ack = {p: False for p in session.players.keys()}
+            state.phase_ack_since = current_time
 
         # 5. Check Game Over
         if rules.check_game_over(state):
@@ -215,10 +271,12 @@ class PySlapEngine:
             return # Exit loop
 
         # 6. Save State and Reschedule
-        state_data = asdict(state)
-        state_data["id"] = session_id
-        self.db.update("states", session_id, state_data)
+        # Only save if the phase changed (prevents overwriting concurrent phase_ack updates)
+        if not skip_tick or new_phase != original_phase:
+            state_data = asdict(state)
+            state_data["id"] = session_id
+            self.db.update("states", session_id, state_data)
         
         # Enforce serverless minimum interval requirement (>=500ms)
-        delay_ms = max(config.update_interval_ms, 500)
+        delay_ms = max(config.update_interval_ms, self.MINIMUM_UPDATE_INTERVAL_MS)
         self.scheduler.schedule_next_update(session_id, delay_ms)

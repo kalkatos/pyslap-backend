@@ -45,6 +45,9 @@ class RpsGameRules(GameRules):
     # GameRules interface
     # ------------------------------------------------------------------
 
+    def get_phase_gates(self) -> set[str]:
+        return {"round_complete"}
+
     def create_game_state(self, players: list[Player]) -> GameState:
         private_state = {}
         for player in players:

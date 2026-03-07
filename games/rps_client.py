@@ -21,11 +21,11 @@ GAME_ID = "rps"
 
 
 # ---------------------------------------------------------------------------
-# HTTP helpers
+# HTTP helpers (async)
 # ---------------------------------------------------------------------------
 
-def _start_session(game_id: str, player_id: str, player_name: str) -> dict[str, Any] | None:
-    resp = httpx.post(f"{BASE_URL}/session", json={
+async def _start_session (client: httpx.AsyncClient, game_id: str, player_id: str, player_name: str) -> dict[str, Any] | None:
+    resp = await client.post(f"{BASE_URL}/session", json={
         "game_id": game_id,
         "player_id": player_id,
         "player_name": player_name,
@@ -35,8 +35,8 @@ def _start_session(game_id: str, player_id: str, player_name: str) -> dict[str, 
     return resp.json()
 
 
-def _get_state(session_id: str, player_id: str, token: str) -> dict[str, Any]:
-    resp = httpx.get(f"{BASE_URL}/state", params={
+async def _get_state (client: httpx.AsyncClient, session_id: str, player_id: str, token: str) -> dict[str, Any]:
+    resp = await client.get(f"{BASE_URL}/state", params={
         "session_id": session_id,
         "player_id": player_id,
         "token": token,
@@ -45,8 +45,8 @@ def _get_state(session_id: str, player_id: str, token: str) -> dict[str, Any]:
     return resp.json()
 
 
-def _send_action(session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any]) -> None:
-    resp = httpx.post(f"{BASE_URL}/action", json={
+async def _send_action (client: httpx.AsyncClient, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any]) -> None:
+    resp = await client.post(f"{BASE_URL}/action", json={
         "session_id": session_id,
         "player_id": player_id,
         "token": token,
@@ -60,7 +60,7 @@ def _send_action(session_id: str, player_id: str, token: str, action_type: str, 
 # Input helper
 # ---------------------------------------------------------------------------
 
-async def _read_input(prompt: str, timeout: float) -> str | None:
+async def _read_input (prompt: str, timeout: float) -> str | None:
     """Read a line from stdin with a timeout (seconds). Returns None on timeout."""
     loop = asyncio.get_event_loop()
     print(prompt, end="", flush=True)
@@ -76,113 +76,125 @@ async def _read_input(prompt: str, timeout: float) -> str | None:
 # Main game loop
 # ---------------------------------------------------------------------------
 
-async def run_client() -> None:
-    # ---- create session ----
-    result = _start_session(GAME_ID, PLAYER_ID, PLAYER_NAME)
-    if result is None:
-        print("Failed to create session. Is the server running?")
-        return
+async def run_client () -> None:
+    async with httpx.AsyncClient() as client:
+        # ---- create session ----
+        result = await _start_session(client, GAME_ID, PLAYER_ID, PLAYER_NAME)
+        if result is None:
+            print("Failed to create session. Is the server running?")
+            return
 
-    session_id = result["session_id"]
-    token = result["token"]
+        session_id = result["session_id"]
+        token = result["token"]
 
-    print("=" * 40)
-    print("  ROCK  PAPER  SCISSORS  (best of 3)")
-    print("=" * 40)
+        print("=" * 40)
+        print("  ROCK  PAPER  SCISSORS  (best of 3)")
+        print("=" * 40)
 
-    # ---- game loop ----
-    while True:
-        # Fetch current state
-        state = _get_state(session_id, PLAYER_ID, token)
+        last_state_version = -1
 
-        ps = state["public_state"]
-        phase = ps.get("phase", "")
+        # ---- game loop ----
+        while True:
+            # Fetch current state
+            state = await _get_state(client, session_id, PLAYER_ID, token)
 
-        match phase:
-            case "waiting_for_move":
-                rnd = ps.get("round", "?")
-                print(f"\n--- Round {rnd} ---")
-                user_input = await _read_input("Enter your move (R/P/S): ", timeout=10.0)
+            current_version = state.get("state_version", 0)
+            if current_version == last_state_version:
+                await asyncio.sleep(0.1)
+                continue
+                
+            last_state_version = current_version
 
-                if user_input is None:
+            ps = state["public_state"]
+            phase = ps.get("phase", "")
+
+            match phase:
+                case "waiting_for_move":
+                    rnd = ps.get("round", "?")
+                    print(f"\n--- Round {rnd} ---")
+                    user_input = await _read_input("Enter your move (R/P/S): ", timeout=10.0)
+
+                    if user_input is None:
+                        print("\nNo move made within 10 seconds, terminating match.")
+                        break
+
+                    choice = user_input.upper()
+                    if choice not in ("R", "P", "S"):
+                        print(f"Invalid move '{user_input}'. Please enter R, P, or S.")
+                        continue
+
+                    # Send the player's move
+                    await _send_action(
+                        client,
+                        session_id=session_id,
+                        player_id=PLAYER_ID,
+                        token=token,
+                        action_type="move",
+                        payload={"choice": choice},
+                    )
+
+                    # Send the computer's random move
+                    computer_choice = random.choice(["R", "P", "S"])
+                    await _send_action(
+                        client,
+                        session_id=session_id,
+                        player_id=COMPUTER_ID,
+                        token=token,
+                        action_type="move",
+                        payload={"choice": computer_choice},
+                    )
+
+                case "round_complete":
+                    move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
+                    pm = ps.get("last_p1_move", "?")
+                    cm = ps.get("last_p2_move", "?")
+
+                    print(f"Player move:   {move_names.get(pm, pm)}")
+                    print(f"Computer move: {move_names.get(cm, cm)}")
+
+                    winner = ps.get("last_round_winner", "")
+                    if winner == "p1":
+                        print(">> You win this round!")
+                    elif winner == "p2":
+                        print(">> Computer wins this round!")
+                    else:
+                        print(">> It's a draw! Play again.")
+                    print(f"\nScore: Player {ps.get('p1_score', 0)} - {ps.get('p2_score', 0)} Computer")
+
+                case "game_over":
+                    move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
+                    pm = ps.get("last_p1_move", "?")
+                    cm = ps.get("last_p2_move", "?")
+                    print(f"Player move:   {move_names.get(pm, pm)}")
+                    print(f"Computer move: {move_names.get(cm, cm)}")
+
+                    winner = ps.get("last_round_winner", "")
+                    if winner == "p1":
+                        print(">> You win this round!")
+                    elif winner == "p2":
+                        print(">> Computer wins this round!")
+                    else:
+                        print(">> It's a draw! Play again.")
+
+                    print("\n" + "=" * 40)
+                    print(f"  FINAL SCORE:  Player {ps['p1_score']} - {ps['p2_score']} Computer")
+                    if ps.get("winner") == "p1":
+                        print("  🎉  You win the match!")
+                    else:
+                        print("  💻  Computer wins the match!")
+                    print("=" * 40)
+                    break
+
+                case "timeout":
                     print("\nNo move made within 10 seconds, terminating match.")
                     break
 
-                choice = user_input.upper()
-                if choice not in ("R", "P", "S"):
-                    print(f"Invalid move '{user_input}'. Please enter R, P, or S.")
-                    continue
+                case _:
+                    print(f"\n! ! ! Unknown phase: {phase}")
 
-                # Send the player's move
-                _send_action(
-                    session_id=session_id,
-                    player_id=PLAYER_ID,
-                    token=token,
-                    action_type="move",
-                    payload={"choice": choice},
-                )
+            await asyncio.sleep(0.1)
 
-                # Send the computer's random move
-                computer_choice = random.choice(["R", "P", "S"])
-                _send_action(
-                    session_id=session_id,
-                    player_id=COMPUTER_ID,
-                    token=token,
-                    action_type="move",
-                    payload={"choice": computer_choice},
-                )
-
-            case "round_complete":
-                move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
-                pm = ps.get("last_p1_move", "?")
-                cm = ps.get("last_p2_move", "?")
-
-                print(f"Player move:   {move_names.get(pm, pm)}")
-                print(f"Computer move: {move_names.get(cm, cm)}")
-
-                winner = ps.get("last_round_winner", "")
-                if winner == "p1":
-                    print(">> You win this round!")
-                elif winner == "p2":
-                    print(">> Computer wins this round!")
-                else:
-                    print(">> It's a draw! Play again.")
-                print(f"\nScore: Player {ps.get('p1_score', 0)} - {ps.get('p2_score', 0)} Computer")
-
-            case "game_over":
-                move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
-                pm = ps.get("last_p1_move", "?")
-                cm = ps.get("last_p2_move", "?")
-                print(f"Player move:   {move_names.get(pm, pm)}")
-                print(f"Computer move: {move_names.get(cm, cm)}")
-
-                winner = ps.get("last_round_winner", "")
-                if winner == "p1":
-                    print(">> You win this round!")
-                elif winner == "p2":
-                    print(">> Computer wins this round!")
-                else:
-                    print(">> It's a draw! Play again.")
-
-                print("\n" + "=" * 40)
-                print(f"  FINAL SCORE:  Player {ps['p1_score']} - {ps['p2_score']} Computer")
-                if ps.get("winner") == "p1":
-                    print("  🎉  You win the match!")
-                else:
-                    print("  💻  Computer wins the match!")
-                print("=" * 40)
-                break
-
-            case "timeout":
-                print("\nNo move made within 10 seconds, terminating match.")
-                break
-
-            case _:
-                print(f"\n! ! ! Unknown phase: {phase}")
-
-        await asyncio.sleep(0.5)
-
-    print("\nThanks for playing!")
+        print("\nThanks for playing!")
 
 
 if __name__ == "__main__":

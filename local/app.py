@@ -60,30 +60,30 @@ async def start_session(req: StartSessionRequest):
     return result
 
 @app.post("/action")
-async def send_action(req: ActionRequest):
-    try:
-        entrypoint.send_action(req.session_id, req.player_id, req.token, req.action_type, req.payload)
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+async def send_action (req: ActionRequest):
+    success = entrypoint.send_action(req.session_id, req.player_id, req.token, req.action_type, req.payload)
+    if success is False:
+        raise HTTPException(status_code=403, detail="Action rejected: invalid token, session, or permission.")
+    return {"status": "success"}
 
 @app.get("/state")
-async def get_state(session_id: str, player_id: str, token: str):
+async def get_state (session_id: str, player_id: str, token: str):
     try:
-        # In a real app we might validate the token more strictly here,
-        # but for local dev we'll rely on the entrypoint/engine.
         state = entrypoint.get_state(session_id, player_id, token)
-        # return the dict representation of the object
         return asdict(state)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/data")
-async def get_data(req: DataRequest):
+async def get_data (req: DataRequest):
     try:
         data = entrypoint.get_data(req.session_id, req.player_id, req.token, req.collection, req.filters)
         return {"data": data}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

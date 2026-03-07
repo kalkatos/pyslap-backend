@@ -17,19 +17,20 @@ class LocalEntrypoint(EntrypointInterface):
         """
         return self.engine.create_session(game_id, player_id, player_name)
 
-    def send_action(self, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any]) -> None:
+    def send_action (self, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any]) -> bool:
         """
         Relays the action to the engine's register_action method.
         """
-        self.engine.register_action(session_id, player_id, token, action_type, payload)
+        return self.engine.register_action(session_id, player_id, token, action_type, payload)
 
-    def get_state(self, session_id: str, player_id: str, token: str) -> GameState:
+    def get_state (self, session_id: str, player_id: str, token: str) -> GameState:
         """
         Retrieves the current game state for a specific player.
         """
-        # PySlapEngine doesn't have a direct 'get_state' method for a player yet.
-        # We need to fetch it from the database and use the game rules to prepare it.
-        
+        # Verify the token before serving any data
+        if not self.engine.security.validate_request_token(session_id, player_id, token):
+            raise PermissionError(f"Invalid token for player {player_id} in session {session_id}")
+
         # Load session to verify game rules
         session_data = self.engine.db.read("sessions", session_id)
         if not session_data:
@@ -50,19 +51,36 @@ class LocalEntrypoint(EntrypointInterface):
         game_state = GameState(**state_data)
 
         # Prepare state for client
-        return game_state.to_player_state(player_id)
+        player_state = game_state.to_player_state(player_id)
+        
+        # Register ack for phase gate if needed
+        gated_phases = rules.get_phase_gates()
+        current_phase = game_state.public_state.get("phase")
+        
+        if current_phase in gated_phases and player_id in game_state.phase_ack:
+            if not game_state.phase_ack[player_id]:
+                game_state.phase_ack[player_id] = True
+                
+                # Resave state with ack
+                from dataclasses import asdict
+                state_to_save = asdict(game_state)
+                state_to_save["id"] = session_id
+                self.engine.db.update("states", session_id, state_to_save)
+                
+        return player_state
 
-    def get_data(self, session_id: str, player_id: str, token: str, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
+    def get_data (self, session_id: str, player_id: str, token: str, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
         """
         Queries data from the engine's database with filters.
         """
-        # Security check (ensure player belongs to session/has access)
-        # For simplicity in local entrypoint, we follow PySlapEngine's pattern of minimal checks here
-        # or assuming the token validation happens if needed.
-        
+        # Verify the token before serving any data
+        if not self.engine.security.validate_request_token(session_id, player_id, token):
+            raise PermissionError(f"Invalid token for player {player_id} in session {session_id}")
+
         # Add session_id to filters if it's relevant for the collection
         query_filters = filters.copy()
         if "session_id" not in query_filters:
             query_filters["session_id"] = session_id
             
         return self.engine.db.query(collection, query_filters)
+

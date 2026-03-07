@@ -19,30 +19,29 @@ class SecurityManager:
         """Generates a secure, random token for a session requester."""
         return secrets.token_hex(32)
 
-    def verify_identity(self, player_id: str, name: str) -> Optional[Player]:
+    def verify_identity (self, player_id: str, name: str) -> Optional[Player]:
         """
-        Verifies if the player exists in the database.
-        If they exist and match, returns a Player object with a generated token.
-        If they don't exist, this logic might create them (depending on external auth needs).
-        For now, this assumes we either verify or create.
+        Verifies the player exists in the database.
+        Returns a Player with a fresh session token if found, or None if the
+        player_id is not registered.
         """
-        # We would use the DatabaseInterface to query:
-        # result = self.db.read("players", player_id)
-        # if result and result.get("name") == name:
-        #     return Player(player_id=player_id, name=name, token=self.generate_token())
-        # return None
-        
-        # Stub: Auto-verify / Auto-create for simplicity
+        record = self.db.read("players", player_id)
+        if not record:
+            return None  # Unknown player — reject
         return Player(player_id=player_id, name=name, token=self.generate_token())
 
-    def validate_request_token(self, player_id: str, token: str) -> bool:
+    def validate_request_token (self, session_id: str, player_id: str, token: str) -> bool:
         """
-        Validates if the provided security token matches the token assigned
-        to the player during verification.
+        Validates that the token matches the one stored in the session for this player.
+        Returns False if the session doesn't exist, the player isn't in it, or the
+        token doesn't match.
         """
-        # Real implementation would fetch the active session's player list or user database
-        # result = self.db.read("players", player_id)
-        # return result and result.get("token") == token
-        
-        # Stub placeholder logic
-        return True
+        session_data = self.db.read("sessions", session_id)
+        if not session_data:
+            return False
+        players = session_data.get("players", {})
+        player_data = players.get(player_id)
+        if not player_data:
+            return False
+        expected_token = player_data.get("token") if isinstance(player_data, dict) else getattr(player_data, "token", None)
+        return expected_token == token

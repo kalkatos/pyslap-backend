@@ -10,7 +10,7 @@ class EntrypointInterface(ABC):
         pass
 
     @abstractmethod
-    def send_action(self, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any]) -> None:
+    def send_action (self, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any]) -> bool:
         pass
 
     @abstractmethod

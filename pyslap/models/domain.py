@@ -31,10 +31,11 @@ class Action:
 class GameConfig:
     """Configuration specific to a game implementation."""
     game_id: str
-    update_interval_ms: int = 500
+    update_interval_ms: int = 0
     max_players: int = 2
     session_timeout_sec: int = 300  # 5 minutes
     max_lifetime_sec: int = 3600    # 1 hour
+    phase_ack_timeout_sec: int = 10 # max seconds to wait for all players to ack a gated phase
     custom_settings: dict[str, Any] = field(default_factory=dict)
 
 
@@ -43,6 +44,9 @@ class GameState:
     """The state of a game."""
     session_id: str
     is_game_over: bool = False
+    state_version: int = 0
+    phase_ack: dict[str, bool] = field(default_factory=dict)  # player_id -> acked
+    phase_ack_since: float = 0.0  # timestamp when the gated phase started
     public_state: dict[str, Any] = field(default_factory=dict)
     private_state: dict[str, dict[str, Any]] = field(default_factory=dict) # player_id -> private state
     last_update_timestamp: float = 0.0
