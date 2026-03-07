@@ -13,6 +13,13 @@ from typing import Any
 import httpx
 
 BASE_URL = "http://localhost:8000"
+for i, arg in enumerate(sys.argv):
+    if arg == "--port" and i + 1 < len(sys.argv):
+        BASE_URL = f"http://localhost:{sys.argv[i + 1]}"
+        break
+    elif arg.startswith("--port="):
+        BASE_URL = f"http://localhost:{arg.split('=')[1]}"
+        break
 
 PLAYER_ID = "player1"
 COMPUTER_ID = "computer"
