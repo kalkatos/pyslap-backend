@@ -2,7 +2,7 @@ import time
 from typing import Optional
 
 from pyslap.interfaces.database import DatabaseInterface
-from pyslap.models.domain import Action, Session
+from pyslap.models.domain import Action, Session, GameState
 
 
 class Validator:
@@ -41,6 +41,7 @@ class Validator:
                 "action_type": action.action_type,
                 "payload": action.payload,
                 "timestamp": action.timestamp,
+                "nonce": getattr(action, "nonce", 0),
                 "processed": False
             }
             self.db.create(collection, action_data)
@@ -62,3 +63,11 @@ class Validator:
         Returns True if the session must be terminated immediately.
         """
         return (current_time - session.created_at) > max_lifetime_sec
+
+    def validate_action_nonce(self, state: GameState, player_id: str, incoming_nonce: int) -> bool:
+        """
+        Validates the sequence nonce of an incoming action.
+        Prevents replay attacks and out-of-order execution.
+        """
+        expected_nonce = state.last_nonces.get(player_id, 0) + 1
+        return incoming_nonce == expected_nonce

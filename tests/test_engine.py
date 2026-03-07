@@ -88,7 +88,8 @@ def test_engine_register_action_success():
         player_id="p1", 
         token=valid_token, 
         action_type="move", 
-        payload={"x": 5}
+        payload={"x": 5},
+        nonce=1
     )
     
     assert result is True
@@ -136,8 +137,8 @@ def test_process_update_loop_executes_actions():
     
     # Setup pending actions mapping
     mock_db.query.return_value = [
-        {"id": "act1", "player_id": "p1", "action_type": "valid_move", "payload": "did_thing", "timestamp": current_time},
-        {"id": "act2", "player_id": "p2", "action_type": "invalid_move", "payload": "fail", "timestamp": current_time}
+        {"id": "act1", "player_id": "p1", "action_type": "valid_move", "payload": "did_thing", "timestamp": current_time, "nonce": 1},
+        {"id": "act2", "player_id": "p2", "action_type": "invalid_move", "payload": "fail", "timestamp": current_time, "nonce": 1}
     ]
     
     # Execute loop

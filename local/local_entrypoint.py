@@ -17,11 +17,11 @@ class LocalEntrypoint(EntrypointInterface):
         """
         return self.engine.create_session(game_id, player_id, player_name, custom_data)
 
-    def send_action (self, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any]) -> bool:
+    def send_action (self, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any], nonce: int = 0) -> bool:
         """
         Relays the action to the engine's register_action method.
         """
-        return self.engine.register_action(session_id, player_id, token, action_type, payload)
+        return self.engine.register_action(session_id, player_id, token, action_type, payload, nonce)
 
     def get_state (self, session_id: str, player_id: str, token: str) -> GameState:
         """

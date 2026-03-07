@@ -71,7 +71,7 @@ def test_local_entrypoint_flow(setup_engine):
     assert state.public_state["phase"] == "waiting_for_move"
     
     # 3. Send action via entrypoint
-    entrypoint.send_action(session_id, player_id, token, "move", {"choice": "R"})
+    entrypoint.send_action(session_id, player_id, token, "move", {"choice": "R"}, 1)
     
     # 4. Check if action is logged in DB
     actions = db.query("actions", {"session_id": session_id})

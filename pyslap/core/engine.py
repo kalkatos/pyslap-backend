@@ -126,6 +126,7 @@ class PySlapEngine:
         token: str,
         action_type: str,
         payload: dict[str, Any],
+        nonce: int = 0
     ) -> bool:
         """
         Registers an action for the next update loop.
@@ -155,6 +156,7 @@ class PySlapEngine:
             action_type=action_type,
             payload=payload,
             timestamp=current_time,
+            nonce=nonce
         )
 
         # Let Validator log it via DB
@@ -253,9 +255,15 @@ class PySlapEngine:
                 action_type=raw_act["action_type"],
                 payload=raw_act["payload"],
                 timestamp=raw_act["timestamp"],
+                nonce=raw_act.get("nonce", 0)
             )
-            if rules.validate_action(action, state):
-                state = rules.apply_action(action, state)
+            
+            # Check nonce before applying
+            if self.validator.validate_action_nonce(state, action.player_id, action.nonce):
+                if rules.validate_action(action, state):
+                    state = rules.apply_action(action, state)
+                    # Update local state nonce to prevent replays
+                    state.last_nonces[action.player_id] = action.nonce
 
             # Mark action as processed
             raw_act["processed"] = True

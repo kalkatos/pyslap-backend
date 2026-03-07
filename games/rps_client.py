@@ -55,13 +55,14 @@ async def _get_state (client: httpx.AsyncClient, session_id: str, player_id: str
     return resp.json()
 
 
-async def _send_action (client: httpx.AsyncClient, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any]) -> None:
+async def _send_action (client: httpx.AsyncClient, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any], nonce: int) -> None:
     resp = await client.post(f"{BASE_URL}/action", json={
         "session_id": session_id,
         "player_id": player_id,
         "token": token,
         "action_type": action_type,
         "payload": payload,
+        "nonce": nonce,
     })
     resp.raise_for_status()
 
@@ -102,6 +103,7 @@ async def run_client () -> None:
         print("=" * 40)
 
         last_state_version = -1
+        client_nonce = 0
 
         # ---- game loop ----
         while True:
@@ -139,6 +141,7 @@ async def run_client () -> None:
                         break
 
                     # Send the player's move
+                    client_nonce += 1
                     await _send_action(
                         client,
                         session_id=session_id,
@@ -146,6 +149,7 @@ async def run_client () -> None:
                         token=token,
                         action_type="move",
                         payload={"choice": choice},
+                        nonce=client_nonce,
                     )
 
                 case "round_complete":

@@ -40,6 +40,7 @@ class ActionRequest(BaseModel):
     token: str
     action_type: str
     payload: Dict[str, Any]
+    nonce: int = 0
 
 class StateRequest(BaseModel):
     session_id: str
@@ -64,7 +65,7 @@ async def start_session(req: StartSessionRequest):
 
 @app.post("/action")
 async def send_action (req: ActionRequest):
-    success = entrypoint.send_action(req.session_id, req.player_id, req.token, req.action_type, req.payload)
+    success = entrypoint.send_action(req.session_id, req.player_id, req.token, req.action_type, req.payload, req.nonce)
     if success is False:
         raise HTTPException(status_code=403, detail="Action rejected: invalid token, session, or permission.")
     return {"status": "success"}

@@ -25,6 +25,7 @@ class Action:
     action_type: str
     payload: dict[str, Any]
     timestamp: float
+    nonce: int = 0
 
 
 @dataclass
@@ -49,6 +50,7 @@ class GameState:
     phase_ack_since: float = 0.0  # timestamp when the gated phase started
     public_state: dict[str, Any] = field(default_factory=dict)
     private_state: dict[str, dict[str, Any]] = field(default_factory=dict) # player_id -> private state
+    last_nonces: dict[str, int] = field(default_factory=dict) # player_id -> last accepted nonce
     last_update_timestamp: float = 0.0
 
     def to_player_state(self, player_id: str) -> 'GameState':

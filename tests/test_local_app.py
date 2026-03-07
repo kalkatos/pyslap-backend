@@ -112,6 +112,7 @@ def test_send_action():
             "token": token,
             "action_type": "move",
             "payload": {"choice": "R"},
+            "nonce": 1
         },
     )
     assert resp2.status_code == 200
