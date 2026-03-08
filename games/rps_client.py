@@ -12,13 +12,15 @@ from typing import Any
 import httpx
 
 BASE_URL = "http://localhost:8000"
+USE_BOT = False
+
 for i, arg in enumerate(sys.argv):
     if arg == "--port" and i + 1 < len(sys.argv):
         BASE_URL = f"http://localhost:{sys.argv[i + 1]}"
-        break
     elif arg.startswith("--port="):
         BASE_URL = f"http://localhost:{arg.split('=')[1]}"
-        break
+    elif arg == "--bot":
+        USE_BOT = True
 
 PLAYER_ID = "player1"
 COMPUTER_ID = "computer"
@@ -90,7 +92,7 @@ async def _read_input (prompt: str, timeout: float) -> str:
 async def run_client () -> None:
     async with httpx.AsyncClient() as client:
         # ---- create session ----
-        result = await _start_session(client, GAME_ID, PLAYER_ID, PLAYER_NAME, custom_data={"use_bot": True})
+        result = await _start_session(client, GAME_ID, PLAYER_ID, PLAYER_NAME, custom_data={"use_bot": USE_BOT})
         if result is None:
             print("Failed to create session. Is the server running?")
             return
