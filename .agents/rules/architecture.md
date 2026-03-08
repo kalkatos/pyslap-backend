@@ -1,3 +1,7 @@
+---
+trigger: always_on
+---
+
 Instructions for the implementation:
 
 - The backend must be implemented using Python
@@ -5,7 +9,7 @@ Instructions for the implementation:
 - The server code should be modular and well-organized.
 - There must be a check for security issues before accepting any action.
 - The action validation must be part of the specific game rules implementation, as well as the preparation of a new game state.
-- To save the game state, use the database, but the create, read, update and delete operations must use an interface, so I can change the database implementation in the future without modifying the backend code.
+- To save the game state, use the database, but the create, read, update, delete, and query operations must use an interface, so I can change the database implementation in the future without modifying the backend code.
 - To schedule the update check, use an interface, so I can change the scheduling implementation in the future without modifying the backend code.
 - The code must be aware of the serverless architecture, so it can be deployed on any serverless platform provider.
 - The code must be aware of the polling mechanism, so it can be used with any game engine.
