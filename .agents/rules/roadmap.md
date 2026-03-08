@@ -18,7 +18,7 @@ This document provides technical blueprints for future PySlap enhancements. Refe
     *   `local/app.py`: Implement a FastAPI dependency to extract and verify the JWT from the `Authorization: Bearer <token>` header.
 *   **Testing**: Use `pytest` to verify that an expired token or a signature mismatch returns HTTP 401.
 
-### 2. Action Sequencing (Nonces)
+### 2. Action Sequencing (Nonces) - DONE ✅ -
 *   **Description**: Implement a `sequence_id` for actions to prevent replay attacks and ensure out-of-order network packets don't cause illegal state transitions.
 *   **Changes**:
     *   `pyslap/models/domain.py`: Add `nonce: int` (or `sequence_id`) to the `Action` dataclass.
