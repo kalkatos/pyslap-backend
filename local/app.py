@@ -1,9 +1,14 @@
 from dataclasses import asdict
 from typing import Any, Dict
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
 from pyslap.core.engine import PySlapEngine
+from pyslap.models.domain import Role
 from local.local_scheduler import LocalScheduler
 from local.sql_database import SQLiteDatabase
 from local.local_entrypoint import LocalEntrypoint
@@ -26,12 +31,17 @@ entrypoint = LocalEntrypoint(engine)
 
 app = FastAPI(title="PYSLAP Local Backend API")
 
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # --- Pydantic Models for Requests ---
 
 class StartSessionRequest(BaseModel):
     game_id: str
     player_id: str
     player_name: str
+    role: str = "player"
     custom_data: Dict[str, Any] | None = None
 
 class ActionRequest(BaseModel):
@@ -57,18 +67,28 @@ class DataRequest(BaseModel):
 # --- API Endpoints ---
 
 @app.post("/session")
-async def start_session(req: StartSessionRequest):
-    result = entrypoint.start_session(req.game_id, req.player_id, req.player_name, req.custom_data)
+@limiter.limit("5/minute")
+async def start_session(request: Request, req: StartSessionRequest):
+    try:
+        req_role = Role(req.role)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid role specified.")
+        
+    result = entrypoint.start_session(req.game_id, req.player_id, req.player_name, req_role, req.custom_data)
     if not result:
         raise HTTPException(status_code=400, detail="Failed to start session. Check game_id or player details.")
     return result
 
 @app.post("/action")
-async def send_action (req: ActionRequest):
-    success = entrypoint.send_action(req.session_id, req.player_id, req.token, req.action_type, req.payload, req.nonce)
-    if success is False:
-        raise HTTPException(status_code=403, detail="Action rejected: invalid token, session, or permission.")
-    return {"status": "success"}
+@limiter.limit("60/minute")
+async def send_action (request: Request, req: ActionRequest):
+    try:
+        success = entrypoint.send_action(req.session_id, req.player_id, req.token, req.action_type, req.payload, req.nonce)
+        if success is False:
+            raise HTTPException(status_code=403, detail="Action rejected: invalid token, session, or permission.")
+        return {"status": "success"}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 @app.get("/state")
 async def get_state (session_id: str, player_id: str, token: str):

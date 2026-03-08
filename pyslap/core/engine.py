@@ -8,7 +8,7 @@ from pyslap.core.validator import Validator
 from pyslap.core.game_rules import GameRules
 from pyslap.interfaces.database import DatabaseInterface
 from pyslap.interfaces.scheduler import SchedulerInterface
-from pyslap.models.domain import Action, GameConfig, GameState, Session, SessionStatus
+from pyslap.models.domain import Action, GameConfig, GameState, Session, SessionStatus, Role
 
 
 class PySlapEngine:
@@ -61,7 +61,7 @@ class PySlapEngine:
             self.db.delete("sessions", session_id)
 
     def create_session(
-        self, game_id: str, requester_id: str, requester_name: str, custom_data: dict[str, Any] | None = None
+        self, game_id: str, requester_id: str, requester_name: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None
     ) -> dict[str, Any] | None:
         """
         Creates a new session, generates tokens, and schedules the first update.
@@ -70,7 +70,7 @@ class PySlapEngine:
             return None  # Unknown game
 
         # Verify requester
-        player = self.security.verify_identity(requester_id, requester_name)
+        player = self.security.verify_identity(requester_id, requester_name, role)
         if not player:
             return None
 
@@ -84,7 +84,7 @@ class PySlapEngine:
         current_time = time.time()
 
         # Generate a stateless session token for the player
-        player.token = self.security.generate_session_token(player.player_id, session_id)
+        player.token = self.security.generate_session_token(player.player_id, session_id, role)
 
         session = Session(
             session_id=session_id,

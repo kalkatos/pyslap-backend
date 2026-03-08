@@ -3,7 +3,7 @@ import jwt
 from typing import Optional
 
 from pyslap.interfaces.database import DatabaseInterface
-from pyslap.models.domain import Player
+from pyslap.models.domain import Player, Role
 
 
 class SecurityManager:
@@ -17,16 +17,17 @@ class SecurityManager:
         self.db = db
         self.secret_key = secret_key
 
-    def generate_session_token (self, player_id: str, session_id: str) -> str:
+    def generate_session_token (self, player_id: str, session_id: str, role: Role = Role.PLAYER) -> str:
         """Generates a signed JWT session token."""
         payload = {
             "player_id": player_id,
             "session_id": session_id,
+            "role": role.value,
             "exp": time.time() + 86400  # 24 hours expiration
         }
         return jwt.encode(payload, self.secret_key, algorithm="HS256")
 
-    def verify_identity (self, player_id: str, name: str) -> Optional[Player]:
+    def verify_identity (self, player_id: str, name: str, role: Role = Role.PLAYER) -> Optional[Player]:
         """
         Verifies the player exists in the database.
         Returns a Player without a token (token is generated per-session later).
@@ -35,7 +36,7 @@ class SecurityManager:
         record = self.db.read("players", player_id)
         if not record:
             return None  # Unknown player — reject
-        return Player(player_id=player_id, name=name)
+        return Player(player_id=player_id, name=name, role=role)
 
     def validate_request_token (self, session_id: str, player_id: str, token: str) -> bool:
         """
@@ -51,3 +52,12 @@ class SecurityManager:
             return True
         except jwt.PyJWTError:
             return False
+
+    def get_token_payload (self, token: str) -> Optional[dict]:
+        """
+        Extracts and verifies the JWT payload.
+        """
+        try:
+            return jwt.decode(token, self.secret_key, algorithms=["HS256"])
+        except jwt.PyJWTError:
+            return None
