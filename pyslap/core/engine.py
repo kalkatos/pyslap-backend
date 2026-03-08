@@ -79,6 +79,43 @@ class PySlapEngine:
         config_data.pop("id", None)
         config = GameConfig(game_id=game_id, **config_data)
 
+        # Handle Matchmaking Wait-and-Join
+        if custom_data and custom_data.get("matchmaking"):
+            waiting_sessions = self.db.query("sessions", {"game_id": game_id, "status": SessionStatus.MATCHMAKING})
+            
+            for session_data in waiting_sessions:
+                s_id = session_data["id"]
+                session_data.pop("id", None)
+                session = Session(**session_data)
+                
+                if player.player_id in session.players:
+                    continue  # Player is already in this session
+                
+                player.token = self.security.generate_session_token(player.player_id, s_id, role)
+                session.players[player.player_id] = player
+                
+                if len(session.players) >= config.max_players:
+                    session.status = SessionStatus.ACTIVE
+                
+                updated_session_data = asdict(session)
+                updated_session_data["id"] = s_id
+                self.db.update("sessions", s_id, updated_session_data)
+                
+                state_data = self.db.read("states", s_id)
+                if not state_data:
+                    continue
+                state_data.pop("id", None)
+                state = GameState(**state_data)
+                
+                state = self.games[game_id].setup_player_state(state, player)
+                
+                updated_state_data = asdict(state)
+                updated_state_data["id"] = s_id
+                self.db.update("states", s_id, updated_state_data)
+                
+                client_state = state.to_player_state(player.player_id)
+                return {"session_id": s_id, "token": player.token, "state": client_state}
+
         # Create Session Object
         session_id = str(uuid.uuid4())
         current_time = time.time()
@@ -86,10 +123,12 @@ class PySlapEngine:
         # Generate a stateless session token for the player
         player.token = self.security.generate_session_token(player.player_id, session_id, role)
 
+        initial_status = SessionStatus.MATCHMAKING if (custom_data and custom_data.get("matchmaking")) else SessionStatus.ACTIVE
+
         session = Session(
             session_id=session_id,
             game_id=game_id,
-            status=SessionStatus.ACTIVE,
+            status=initial_status,
             players={player.player_id: player},
             custom_data=custom_data or {},
             created_at=current_time,
@@ -184,7 +223,7 @@ class PySlapEngine:
 
         session_data.pop("id", None)
         session = Session(**session_data)
-        if session.status != SessionStatus.ACTIVE:
+        if session.status not in (SessionStatus.ACTIVE, SessionStatus.MATCHMAKING):
             return
 
         config_data = self.db.read("game_configs", session.game_id) or {}

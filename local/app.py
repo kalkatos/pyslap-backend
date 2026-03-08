@@ -1,6 +1,6 @@
 from dataclasses import asdict
 from typing import Any, Dict
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -17,6 +17,9 @@ from games.rps import RpsGameRules
 # Initialize components
 db = SQLiteDatabase()
 db.create("players", {"id": "player1", "name": "Player 1", "token": "fake_token"})
+db.create("players", {"id": "player2", "name": "Player 2", "token": "fake_token"})
+db.create("players", {"id": "0cc60167-8efe-44a4-afbf-579ae2022f41", "name": "UUID Player 1", "token": "fake_token"})
+db.create("players", {"id": "7c931abf-eb13-4154-9b92-6699ee36f88b", "name": "UUID Player 2", "token": "fake_token"})
 db.create("players", {"id": "computer", "name": "Computer", "token": "fake_token"})
 scheduler = LocalScheduler()
 
@@ -33,7 +36,10 @@ app = FastAPI(title="PYSLAP Local Backend API")
 
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler (request: Request, exc: Exception) -> Response:
+    return _rate_limit_exceeded_handler(request, exc) # type: ignore
+
 
 # --- Pydantic Models for Requests ---
 
@@ -68,7 +74,7 @@ class DataRequest(BaseModel):
 
 @app.post("/session")
 @limiter.limit("5/minute")
-async def start_session(request: Request, req: StartSessionRequest):
+async def start_session (request: Request, req: StartSessionRequest):
     try:
         req_role = Role(req.role)
     except ValueError:

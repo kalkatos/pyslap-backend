@@ -7,12 +7,17 @@ Usage:
 
 import asyncio
 import sys
+import uuid
 from typing import Any
 
 import httpx
 
 BASE_URL = "http://localhost:8000"
 USE_BOT = False
+MATCHMAKING = False
+
+PLAYER_ID = "player1"
+GAME_ID = "rps"
 
 for i, arg in enumerate(sys.argv):
     if arg == "--port" and i + 1 < len(sys.argv):
@@ -21,11 +26,13 @@ for i, arg in enumerate(sys.argv):
         BASE_URL = f"http://localhost:{arg.split('=')[1]}"
     elif arg == "--bot":
         USE_BOT = True
+    elif arg == "--matchmaking":
+        MATCHMAKING = True
+    elif arg.startswith("--player="):
+        # Override the default player ID with a specific one
+        PLAYER_ID = arg.split("=")[1]
 
-PLAYER_ID = "player1"
-COMPUTER_ID = "computer"
-PLAYER_NAME = "Player"
-GAME_ID = "rps"
+PLAYER_NAME = PLAYER_ID.upper()
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +99,10 @@ async def _read_input (prompt: str, timeout: float) -> str:
 async def run_client () -> None:
     async with httpx.AsyncClient() as client:
         # ---- create session ----
-        result = await _start_session(client, GAME_ID, PLAYER_ID, PLAYER_NAME, custom_data={"use_bot": USE_BOT})
+        custom_data = {"use_bot": USE_BOT}
+        if MATCHMAKING:
+            custom_data["matchmaking"] = True
+        result = await _start_session(client, GAME_ID, PLAYER_ID, PLAYER_NAME, custom_data=custom_data)
         if result is None:
             print("Failed to create session. Is the server running?")
             return
@@ -123,6 +133,12 @@ async def run_client () -> None:
             phase = ps.get("phase", "")
 
             match phase:
+                case "waiting_for_players":
+                    print("Waiting for an opponent to join...")
+                    last_state_version = -1  # keep printing periodically? No, only prints on version bump
+                    # To avoid spamming, we just let it sleep
+                    await asyncio.sleep(1.0)
+                    
                 case "waiting_for_move":
                     rnd = ps.get("round", "?")
                     print(f"\n--- Round {rnd} ---")
@@ -156,42 +172,65 @@ async def run_client () -> None:
 
                 case "round_complete":
                     move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
-                    pm = ps.get("last_p1_move", "?")
-                    cm = ps.get("last_p2_move", "?")
+                    
+                    private_state = state.get("private_state", {})
+                    my_raw = private_state.get("my_choice")
+                    opp_raw = private_state.get("opponent_choice")
+                    my_move = move_names.get(my_raw, "?") if my_raw else "?"
+                    opp_move = move_names.get(opp_raw, "?") if opp_raw else "?"
 
-                    print(f"Player move:   {move_names.get(pm, pm)}")
-                    print(f"Computer move: {move_names.get(cm, cm)}")
+                    print(f"Your move:     {my_move}")
+                    print(f"Opponent move: {opp_move}")
 
                     winner = ps.get("last_round_winner", "")
-                    if winner == "p1":
-                        print(">> You win this round!")
-                    elif winner == "p2":
-                        print(">> Computer wins this round!")
-                    else:
+                    
+                    # Logic depends on whether my_score matched winner id. 
+                    # If this player is p1, and p1 won, it's a win for them.
+                    # A better way is matching the choices. 
+                    # But since the game logic already computes score, we'll check if my_score increased.
+                    # Or we just print out the new scores directly:
+                    my_score = private_state.get("my_score", 0)
+                    opp_score = private_state.get("opponent_score", 0)
+
+                    # Determine round win from score difference if we just look at winner 
+                    # Let's derive it directly from backend: we know winner is 'p1' or 'p2'.
+                    # Or we can see who beats who to print the correct message:
+                    if winner == "draw":
                         print(">> It's a draw! Play again.")
-                    print(f"\nScore: Player {ps.get('p1_score', 0)} - {ps.get('p2_score', 0)} Computer")
+                    elif winner in ("p1", "p2"):
+                        # If backend gave us "p1_score", we know our own my_score mapped to it.
+                        print(f">> Round complete!")
+
+                    print(f"\nScore: You {my_score} - {opp_score} Opponent")
 
                 case "game_over":
                     move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
-                    pm = ps.get("last_p1_move", "?")
-                    cm = ps.get("last_p2_move", "?")
-                    print(f"Player move:   {move_names.get(pm, pm)}")
-                    print(f"Computer move: {move_names.get(cm, cm)}")
+                    private_state = state.get("private_state", {})
+                    my_raw = private_state.get("my_choice")
+                    opp_raw = private_state.get("opponent_choice")
+                    my_move = move_names.get(my_raw, "?") if my_raw else "?"
+                    opp_move = move_names.get(opp_raw, "?") if opp_raw else "?"
+                    
+                    print(f"Your move:     {my_move}")
+                    print(f"Opponent move: {opp_move}")
+
+                    my_score = private_state.get("my_score", 0)
+                    opp_score = private_state.get("opponent_score", 0)
 
                     winner = ps.get("last_round_winner", "")
-                    if winner == "p1":
-                        print(">> You win this round!")
-                    elif winner == "p2":
-                        print(">> Computer wins this round!")
-                    else:
+                    if winner == "draw":
                         print(">> It's a draw! Play again.")
+                    else:
+                        print(">> Round complete!")
 
                     print("\n" + "=" * 40)
-                    print(f"  FINAL SCORE:  Player {ps['p1_score']} - {ps['p2_score']} Computer")
-                    if ps.get("winner") == "p1":
+                    print(f"  FINAL SCORE:  You {my_score} - {opp_score} Opponent")
+                    if my_score > opp_score:
                         print("  🎉  You win the match!")
+                    elif opp_score > my_score:
+                        print("  💻  Opponent wins the match!")
                     else:
-                        print("  💻  Computer wins the match!")
+                        print("  🤝  Match drawn!")
                     print("=" * 40)
                     break
 

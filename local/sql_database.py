@@ -14,34 +14,34 @@ class SQLiteDatabase(DatabaseInterface):
     Stores each collection in its own table with JSON data.
     """
 
-    def __init__(self, db_path: str = "temp_database"):
+    def __init__ (self, db_path: str = "temp_database"):
         self.db_path = db_path
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._init_db()
 
-    def _get_connection(self):
+    def _get_connection (self):
         return self._conn
 
-    def _table_exists(self, conn, table_name: str) -> bool:
+    def _table_exists (self, conn, table_name: str) -> bool:
         cursor = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
             (table_name,),
         )
         return cursor.fetchone() is not None
 
-    def _init_db(self):
+    def _init_db (self):
         """No generic tables to initialize upfront."""
         pass
 
-    def dispose(self):
+    def dispose (self):
         self._conn.close()
         try:
             os.unlink(self.db_path)
         except OSError:
             pass
 
-    def create(self, collection: str, data: dict[str, Any]) -> str:
+    def create (self, collection: str, data: dict[str, Any]) -> str:
         # Use an existing id if provided, otherwise generate a new one
         record_id = data.get("id", str(uuid.uuid4()))
         if "id" not in data:
@@ -59,7 +59,7 @@ class SQLiteDatabase(DatabaseInterface):
 
         return record_id
 
-    def read(self, collection: str, record_id: str) -> Optional[dict[str, Any]]:
+    def read (self, collection: str, record_id: str) -> Optional[dict[str, Any]]:
         conn = self._get_connection()
         if not self._table_exists(conn, collection):
             return None
@@ -73,7 +73,7 @@ class SQLiteDatabase(DatabaseInterface):
             return json.loads(row["data"])
         return None
 
-    def update(self, collection: str, record_id: str, data: dict[str, Any]) -> bool:
+    def update (self, collection: str, record_id: str, data: dict[str, Any]) -> bool:
         conn = self._get_connection()
         if not self._table_exists(conn, collection):
             return False
@@ -85,7 +85,7 @@ class SQLiteDatabase(DatabaseInterface):
         conn.commit()
         return cursor.rowcount > 0
 
-    def delete(self, collection: str, record_id: str) -> bool:
+    def delete (self, collection: str, record_id: str) -> bool:
         conn = self._get_connection()
         if not self._table_exists(conn, collection):
             return False
@@ -96,7 +96,7 @@ class SQLiteDatabase(DatabaseInterface):
         conn.commit()
         return cursor.rowcount > 0
 
-    def query(self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
+    def query (self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
         # For a local mock DB, it's safer to fetch all collection items
         # and filter in Python rather than dealing with SQLite JSON intricacies.
         conn = self._get_connection()

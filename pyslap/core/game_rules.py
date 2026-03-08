@@ -18,6 +18,13 @@ class GameRules(ABC):
         """
         pass
 
+    def setup_player_state(self, state: GameState, player: Player) -> GameState:
+        """
+        Initializes the private state for a new player joining an existing session.
+        Override in subclasses to provide specific initialization.
+        """
+        return state
+
     @abstractmethod
     def validate_action(self, action: Action, state: GameState) -> bool:
         """

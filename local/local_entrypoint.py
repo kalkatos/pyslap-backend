@@ -1,17 +1,33 @@
-from typing import Any, Callable
+from typing import Any, Callable, ParamSpec, TypeVar
 from functools import wraps
 from pyslap.interfaces.entrypoint import EntrypointInterface
 from pyslap.core.engine import PySlapEngine
 from pyslap.models.domain import GameState, Role
 
-def ensure_role(required_role: Role):
-    def decorator(func: Callable):
+P = ParamSpec("P")
+R = TypeVar("R")
+
+def ensure_role (required_role: Role):
+    def decorator (func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        def wrapper(self, session_id: str, player_id: str, token: str, *args, **kwargs):
-            payload = self.engine.security.get_token_payload(token)
-            if not payload or payload.get("role") != required_role.value:
-                raise PermissionError(f"Action requires role {required_role.value}")
-            return func(self, session_id, player_id, token, *args, **kwargs)
+        def wrapper (*args: P.args, **kwargs: P.kwargs) -> R:
+            # Extraction of self and token to verify role
+            # We assume this is used on methods with (self, session_id, player_id, token, ...)
+            if not args:
+                 return func(*args, **kwargs)
+            
+            instance: Any = args[0]
+            token: Any = kwargs.get("token")
+            
+            if token is None and len(args) > 3:
+                token = args[3]
+            
+            if hasattr(instance, "engine") and isinstance(token, str):
+                payload = instance.engine.security.get_token_payload(token)
+                if not payload or payload.get("role") != required_role.value:
+                    raise PermissionError(f"Action requires role {required_role.value}")
+            
+            return func(*args, **kwargs)
         return wrapper
     return decorator
 
@@ -21,10 +37,10 @@ class LocalEntrypoint(EntrypointInterface):
     A local implementation of EntrypointInterface that directly interacts with PySlapEngine.
     """
 
-    def __init__(self, engine: PySlapEngine):
+    def __init__ (self, engine: PySlapEngine):
         self.engine = engine
 
-    def start_session(self, game_id: str, player_id: str, player_name: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    def start_session (self, game_id: str, player_id: str, player_name: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None) -> dict[str, Any] | None:
         """
         Starts a new session for a player.
         """

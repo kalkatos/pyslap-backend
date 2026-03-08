@@ -51,10 +51,25 @@ class RpsGameRules(GameRules):
     def create_game_state(self, players: list[Player], custom_data: dict[str, Any]) -> GameState:
         private_state = {}
         for player in players:
-            private_state[player.player_id] = {"choice": ""}
+            private_state[player.player_id] = {
+                "choice": "",
+                "my_choice": None,
+                "opponent_choice": None,
+                "my_score": 0,
+                "opponent_score": 0,
+            }
         use_bot = custom_data.get("use_bot", False)
         if use_bot:
-            private_state["computer"] = {"choice": ""}
+            private_state["computer"] = {
+                "choice": "",
+                "my_choice": None,
+                "opponent_choice": None,
+                "my_score": 0,
+                "opponent_score": 0,
+            }
+
+        is_matchmaking = custom_data.get("matchmaking", False)
+        initial_phase = "waiting_for_players" if is_matchmaking else "waiting_for_move"
 
         return GameState(
             session_id="",
@@ -63,7 +78,7 @@ class RpsGameRules(GameRules):
                 "round": 1,
                 "p1_score": 0,
                 "p2_score": 0,
-                "phase": "waiting_for_move",
+                "phase": initial_phase,
                 "last_p1_move": None,
                 "last_p2_move": None,
                 "last_round_winner": None,
@@ -74,6 +89,16 @@ class RpsGameRules(GameRules):
             is_game_over=False,
             last_update_timestamp=0,
         )
+
+    def setup_player_state(self, state: GameState, player: Player) -> GameState:
+        state.private_state[player.player_id] = {
+            "choice": "",
+            "my_choice": None,
+            "opponent_choice": None,
+            "my_score": 0,
+            "opponent_score": 0,
+        }
+        return state
 
     def validate_action(self, action: Action, state: GameState) -> bool:
         if state.public_state.get("phase") != "waiting_for_move":
@@ -121,6 +146,20 @@ class RpsGameRules(GameRules):
             ps["p2_score"] += 1
         # draw: no score change, replay the round
 
+        # Inject personalized values into private state for each player
+        player_ids = list(state.private_state.keys())
+        p1_id, p2_id = player_ids[0], player_ids[1]
+
+        state.private_state[p1_id]["my_choice"] = choices[0]
+        state.private_state[p1_id]["opponent_choice"] = choices[1]
+        state.private_state[p1_id]["my_score"] = ps["p1_score"]
+        state.private_state[p1_id]["opponent_score"] = ps["p2_score"]
+        
+        state.private_state[p2_id]["my_choice"] = choices[1]
+        state.private_state[p2_id]["opponent_choice"] = choices[0]
+        state.private_state[p2_id]["my_score"] = ps["p2_score"]
+        state.private_state[p2_id]["opponent_score"] = ps["p1_score"]
+
         # Check if someone reached 2 wins → game over
         if ps["p1_score"] >= 2:
             ps["phase"] = "game_over"
@@ -148,6 +187,13 @@ class RpsGameRules(GameRules):
 
         phase = ps.get("phase")
 
+        if phase == "waiting_for_players":
+            if len(state.private_state) >= 2:
+                ps["phase"] = "waiting_for_move"
+                ps["round_start_ms"] = 0
+            # Wait endlessly for players or implement a lobby timeout.
+            return state
+
         # After a round_complete, transition back to waiting
         if phase == "round_complete":
             ps["phase"] = "waiting_for_move"
@@ -157,6 +203,8 @@ class RpsGameRules(GameRules):
             ps["last_round_winner"] = None
             for p in state.private_state:
                 state.private_state[p]["choice"] = ""
+                state.private_state[p]["my_choice"] = None
+                state.private_state[p]["opponent_choice"] = None
             return state
 
         # Timeout check while waiting for a move
