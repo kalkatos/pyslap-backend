@@ -228,7 +228,7 @@ async def run_client () -> None:
                     if my_score > opp_score:
                         print("  🎉  You win the match!")
                     elif opp_score > my_score:
-                        print("  💻  Opponent wins the match!")
+                        print("  😔  Opponent wins the match!")
                     else:
                         print("  🤝  Match drawn!")
                     print("=" * 40)
