@@ -6,48 +6,44 @@ trigger: manual
 
 This document provides technical blueprints for future PySlap enhancements. Refer to these items for subsequent development phases.
 
----
-
-## 🛡️ Security Improvements
-
-### 1. ✅DONE Stateless Session Tokens (JWT)
-*   **Description**: Replace random string tokens with signed JWTs to enable stateless verification of player and session identity without database lookups on every request.
-*   **Modules**: `PyJWT` or `python-jose`.
-*   **Changes**:
-    *   `pyslap/core/security.py`: Update `generate_token` to create a signed JWT containing `player_id`, `session_id`, and `exp` (expiration).
-    *   `local/app.py`: Implement a FastAPI dependency to extract and verify the JWT from the `Authorization: Bearer <token>` header.
-*   **Testing**: Use `pytest` to verify that an expired token or a signature mismatch returns HTTP 401.
-
-### 2. ✅DONE Action Sequencing (Nonces)
-*   **Description**: Implement a `sequence_id` for actions to prevent replay attacks and ensure out-of-order network packets don't cause illegal state transitions.
-*   **Changes**:
-    *   `pyslap/models/domain.py`: Add `nonce: int` (or `sequence_id`) to the `Action` dataclass.
-    *   `pyslap/core/engine.py`: Store `last_nonces: dict[player_id, int]` in the `GameState`.
-    *   `pyslap/core/validator.py`: Add a check to ensure `incoming_nonce == last_nonce + 1`.
-*   **Testing**: A client script sending two actions with the same nonce should see the second one rejected.
-
-### 3. ✅DONE Role-Based Access Control (RBAC)
-*   **Description**: Define explicit roles (PLAYER, SPECTATOR, ADMIN) and enforce permissions at the engine level (e.g., spectators can only call `get_state`).
-*   **Changes**:
-    *   `pyslap/models/domain.py`: Add `Role` enum (PLAYER, SPECTATOR, ADMIN).
-    *   `pyslap/core/security.py`: Include the role in the verification record.
-    *   `EntrypointInterface`: Add an `@ensure_role(Role.PLAYER)` decorator or check to `send_action`.
-*   **Testing**: Register a player as a SPECTATOR and verify that `send_action` returns `False` or 403.
-
-### 4. ✅DONE Rate Limiting
-*   **Description**: Add rate-limiting middleware to protect the `/session` and `/action` endpoints from automated abuse or brute-force attempts.
-*   **Modules**: `slowapi` or `fastapi-limiter`.
-*   **Changes**:
-    *   `local/app.py`: Register the Limiter middleware. Apply decorators like `@limiter.limit("5/minute")` to the `/session` endpoint.
-*   **Testing**: Use a loop in `rps_client.py` to hit the endpoint rapidly and verify it receives HTTP 429.
+## **Important**: For any of these changes, no new entrypoint should be created, only if stricly necessary to avoid security risks or poor performance.
 
 ---
 
 ## ✨ Feature Improvements
 
-### 5. ✅DONE Matchmaking Lobby
-*   **Description**: Create a queuing system where players can wait for opponents; the server auto-starts sessions when enough players are matched.
+### 1. Private Lobby System
+*   **Description**: Add a lobby functionality to the matchmaking system. Allow players to create a private session identified by a user-friendly 6-character alphanumeric ID (e.g., "AB12CD") that can be shared with friends.
 *   **Changes**:
-    *   `pyslap/core/matchmaker.py` (New): A service that holds a queue of `(player_id, game_id)`.
-    *   `local/app.py`: Add `/matchmake/join` and `/matchmake/status` endpoints.
-*   **Testing**: Run two client instances simultaneously; verify they both receive the same `session_id` after a few seconds.
+    *   Update `Session` model to include a `lobby_id` field.
+    *   Modify `PySlapEngine.create_session` to handle a `create_lobby` flag in `custom_data`.
+    *   Implement logic to query sessions by `lobby_id` in the `DatabaseInterface`.
+*   **Testing**: Start one client with `--create-lobby`, note the ID, then start a second client with `--join=ID`. Verify they join the same session.
+
+### 2. Spectator Mode
+*   **Description**: Support users watching matches without participating.
+*   **Changes**:
+    *   Update `PySlapEngine.register_action` to allow joining sessions beyond the `max_players` limit if the role is `SPECTATOR`.
+    *   Update `GameRules.to_player_state` to ensure spectators receive the full public state but no private data.
+*   **Testing**: Join a match with 2 players and 1 spectator. Verify the spectator sees updates but cannot move.
+
+### 3. Match Replay & History
+*   **Description**: Record the sequence of actions and state transitions to allow post-game review.
+*   **Changes**:
+    *   Add an `action_history` collection to the database.
+    *   Update the engine to archive the full state and action logs when a session terminates.
+*   **Testing**: Play a full match, then use a script to fetch the history and verify every move is logged in order.
+
+### 4. Global Leaderboards
+*   **Description**: Track player wins and losses across all sessions and games.
+*   **Changes**:
+    *   Implement a `player_stats` collection in the database.
+    *   Update the engine to report winners to the database when a game ends.
+*   **Testing**: Play multiple matches as the same player and verify the win count increments in the DB.
+
+### 5. In-Game Chat System
+*   **Description**: Simple text communication between players during active sessions.
+*   **Changes**:
+    *   Add a `chat` action type to the engine.
+    *   Store messages in a `messages` list within the `public_state` for real-time syncing.
+*   **Testing**: Send a chat action from one client and verify it appears in the display of the other client.

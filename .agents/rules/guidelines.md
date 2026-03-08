@@ -2,7 +2,27 @@
 trigger: always_on
 ---
 
-Instructions for the implementation:
+PYSLAP is a python multiplayer game backend framework. It works on the cloud with a serverless architecture and has the following features:
+
+- It does not rely on websockets for real-time communication. Instead, it uses a polling mechanism to send updates to the clients.
+- It is implementation agnostic, meaning it can be used with any game engine and any serverless platform provider.
+- It supports multiple games, each with its own rules, running on the same backend.
+
+## How it works:
+
+### A - For the client:
+
+- A new session is requested.
+- A polling loop is started.
+- When a new game state is received, the client updates the game.
+- At any time, the client may send an action to be registered.
+
+### B - For the server:
+
+- A new session is created and an update check is scheduled.
+- When the update check is triggered, the server checks registered player actions and updates the game state.
+
+## Instructions for the implementation:
 
 - The backend must be implemented using Python
 - The game rules implementation should be extensible, meaning new games can be added in the future without modifying the backend code.
@@ -29,4 +49,4 @@ Instructions for the implementation:
 - The game state may be different for each requester, so the game rules implementation must be able to prepare a different game state for each requester. There will be public state variables and private state variables. The public state variables will be sent to all requesters, while the private state variables will be sent only to the requester who owns them.
 - There should be a way to verify if the requester is who they claim to be, so the code must check the requester's id and name against the database. And a security token should be generated to verify the requester's identity. This token will be sent with each request and checked against the database.
 - There is logic for the client and logic for the server, so the code must be aware of the difference between them. The client must not have access to any of the core logic, they only have access to the local implementation of the interfaces.
-- 
+-
