@@ -1,7 +1,20 @@
-from typing import Any
+from typing import Any, Callable
+from functools import wraps
 from pyslap.interfaces.entrypoint import EntrypointInterface
 from pyslap.core.engine import PySlapEngine
-from pyslap.models.domain import GameState
+from pyslap.models.domain import GameState, Role
+
+def ensure_role(required_role: Role):
+    def decorator(func: Callable):
+        @wraps(func)
+        def wrapper(self, session_id: str, player_id: str, token: str, *args, **kwargs):
+            payload = self.engine.security.get_token_payload(token)
+            if not payload or payload.get("role") != required_role.value:
+                raise PermissionError(f"Action requires role {required_role.value}")
+            return func(self, session_id, player_id, token, *args, **kwargs)
+        return wrapper
+    return decorator
+
 
 class LocalEntrypoint(EntrypointInterface):
     """
@@ -11,12 +24,13 @@ class LocalEntrypoint(EntrypointInterface):
     def __init__(self, engine: PySlapEngine):
         self.engine = engine
 
-    def start_session(self, game_id: str, player_id: str, player_name: str, custom_data: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    def start_session(self, game_id: str, player_id: str, player_name: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None) -> dict[str, Any] | None:
         """
         Starts a new session for a player.
         """
-        return self.engine.create_session(game_id, player_id, player_name, custom_data)
+        return self.engine.create_session(game_id, player_id, player_name, role, custom_data)
 
+    @ensure_role(Role.PLAYER)
     def send_action (self, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any], nonce: int = 0) -> bool:
         """
         Relays the action to the engine's register_action method.

@@ -9,11 +9,18 @@ class SessionStatus(str, Enum):
     TERMINATED = "terminated"
 
 
+class Role(str, Enum):
+    PLAYER = "player"
+    SPECTATOR = "spectator"
+    ADMIN = "admin"
+
+
 @dataclass
 class Player:
     """Represents a player in the system."""
     player_id: str
     name: str
+    role: Role = Role.PLAYER
     token: Optional[str] = None
 
 

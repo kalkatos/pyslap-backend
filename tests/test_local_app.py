@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from local.app import app, db
+from local.app import app, db, limiter
 import pytest
 
 client = TestClient(app)
@@ -17,6 +17,8 @@ def cleanup_db():
         conn.commit()
     except Exception:
         pass
+    
+    limiter._storage.reset()
 
 
 def test_start_session():
@@ -155,3 +157,58 @@ def test_get_data():
     data = resp2.json()["data"]
     assert len(data) == 1
     assert data[0]["game_id"] == "rps"
+
+
+def test_rbac_spectator_action():
+    db.create(
+        "game_configs",
+        {
+            "id": "rps",
+            "update_interval_ms": 1000,
+            "max_lifetime_sec": 3600,
+            "session_timeout_sec": 300,
+        },
+    )
+    db.create("players", {"id": "p1", "name": "Player 1", "token": "secret_token"})
+
+    # Start session as spectator
+    resp1 = client.post(
+        "/session",
+        json={"game_id": "rps", "player_id": "p1", "player_name": "Player 1", "role": "spectator"},
+    )
+    assert resp1.status_code == 200
+    session_data = resp1.json()
+    session_id = session_data["session_id"]
+    token = session_data["token"]
+
+    # Action
+    resp2 = client.post(
+        "/action",
+        json={
+            "session_id": session_id,
+            "player_id": "p1",
+            "token": token,
+            "action_type": "move",
+            "payload": {"choice": "R"},
+            "nonce": 1
+        },
+    )
+    # Action rejected because player is a spectator
+    assert resp2.status_code == 403
+    assert "Action requires role player" in resp2.json()["detail"]
+
+
+def test_rate_limit_session():
+    # Attempt to trigger 429
+    db.create("players", {"id": "p1", "name": "Player 1", "token": "secret_token"})
+    db.create("game_configs", {"id": "rps", "update_interval_ms": 1000})
+
+    for i in range(6):
+        resp = client.post(
+            "/session",
+            json={"game_id": "rps", "player_id": "p1", "player_name": "Player 1"},
+        )
+        if i < 5:
+            assert resp.status_code in [200, 400]
+        else:
+            assert resp.status_code == 429
