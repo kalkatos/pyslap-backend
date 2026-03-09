@@ -40,7 +40,7 @@ class PySlapEngine:
         self.validator = Validator(db)
         
         # Initialize Security Manager with provided keys, or let it use defaults
-        security_kwargs = {"db": db}
+        security_kwargs: dict[str, Any] = {"db": db}
         if secret_key:
             security_kwargs["secret_key"] = secret_key
         if external_secret:

@@ -1,4 +1,5 @@
 from dataclasses import asdict
+import os
 from typing import Any, Dict
 from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel
@@ -29,7 +30,15 @@ games_registry = {
 }
 
 # Initialize Engine and Entrypoint
-engine = PySlapEngine(db, scheduler, games_registry)
+secret_key = os.environ.get("PYSLAP_SECRET_KEY")
+external_secret = os.environ.get("PYSLAP_EXTERNAL_SECRET")
+engine = PySlapEngine(
+    db=db, 
+    scheduler=scheduler, 
+    games_registry=games_registry,
+    secret_key=secret_key,
+    external_secret=external_secret
+)
 entrypoint = LocalEntrypoint(engine)
 
 app = FastAPI(title="PYSLAP Local Backend API")
