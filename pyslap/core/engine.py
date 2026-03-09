@@ -31,12 +31,22 @@ class PySlapEngine:
         db: DatabaseInterface,
         scheduler: SchedulerInterface,
         games_registry: Mapping[str, GameRules],
+        secret_key: str | None = None,
+        external_secret: str | None = None,
     ):
         self.db = db
         self.scheduler = scheduler
         self.games = games_registry
         self.validator = Validator(db)
-        self.security = SecurityManager(db)
+        
+        # Initialize Security Manager with provided keys, or let it use defaults
+        security_kwargs = {"db": db}
+        if secret_key:
+            security_kwargs["secret_key"] = secret_key
+        if external_secret:
+            security_kwargs["external_secret"] = external_secret
+            
+        self.security = SecurityManager(**security_kwargs)
         self.scheduler.set_callback(self.process_update_loop)
         self._cleanup_old_records()
 
