@@ -77,3 +77,4 @@ class Session:
     custom_data: dict[str, Any] = field(default_factory=dict)
     created_at: float = 0.0
     last_action_at: float = 0.0
+    lobby_id: Optional[str] = None

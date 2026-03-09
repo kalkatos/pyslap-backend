@@ -81,7 +81,14 @@ class PySlapEngine:
 
         # Handle Matchmaking Wait-and-Join
         if custom_data and custom_data.get("matchmaking"):
-            waiting_sessions = self.db.query("sessions", {"game_id": game_id, "status": SessionStatus.MATCHMAKING})
+            query_filters = {"game_id": game_id, "status": SessionStatus.MATCHMAKING}
+            
+            # If a specific lobby is requested, filter by it instead of general game_id matchmaking
+            join_lobby_id = custom_data.get("join_lobby")
+            if join_lobby_id:
+                query_filters["lobby_id"] = join_lobby_id
+
+            waiting_sessions = self.db.query("sessions", query_filters)
             
             for session_data in waiting_sessions:
                 s_id = session_data["id"]
@@ -114,7 +121,7 @@ class PySlapEngine:
                 self.db.update("states", s_id, updated_state_data)
                 
                 client_state = state.to_player_state(player.player_id)
-                return {"session_id": s_id, "token": player.token, "state": client_state}
+                return {"session_id": s_id, "token": player.token, "state": client_state, "lobby_id": session.lobby_id}
 
         # Create Session Object
         session_id = str(uuid.uuid4())
@@ -125,6 +132,16 @@ class PySlapEngine:
 
         initial_status = SessionStatus.MATCHMAKING if (custom_data and custom_data.get("matchmaking")) else SessionStatus.ACTIVE
 
+        lobby_id = None
+        if custom_data and custom_data.get("create_lobby"):
+            import string
+            import random
+            # Generate a 6-letter uppercase ID (QOEMDU)
+            letters = string.ascii_uppercase
+            lobby_id = ''.join(random.choice(letters) for i in range(6))
+            # Automatically force matchmaking phase so others can join this lobby
+            initial_status = SessionStatus.MATCHMAKING
+
         session = Session(
             session_id=session_id,
             game_id=game_id,
@@ -133,6 +150,7 @@ class PySlapEngine:
             custom_data=custom_data or {},
             created_at=current_time,
             last_action_at=current_time,
+            lobby_id=lobby_id,
         )
 
         # Initialize GameState
@@ -156,7 +174,7 @@ class PySlapEngine:
         # Prepare and return initial state for the requester with their specific private state
         client_state = game_state.to_player_state(player.player_id)
 
-        return {"session_id": session_id, "token": player.token, "state": client_state}
+        return {"session_id": session_id, "token": player.token, "state": client_state, "lobby_id": lobby_id}
 
     def register_action(
         self,

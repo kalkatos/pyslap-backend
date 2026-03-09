@@ -12,27 +12,49 @@ from typing import Any
 
 import httpx
 
-BASE_URL = "http://localhost:8000"
-USE_BOT = False
-MATCHMAKING = False
-
-PLAYER_ID = "player1"
-GAME_ID = "rps"
+base_url = "http://localhost:8000"
+use_bot = False
+matchmaking = False
+create_lobby = False
+join_lobby = None
+player_id = "player1"
+game_id = "rps"
 
 for i, arg in enumerate(sys.argv):
-    if arg == "--port" and i + 1 < len(sys.argv):
-        BASE_URL = f"http://localhost:{sys.argv[i + 1]}"
-    elif arg.startswith("--port="):
-        BASE_URL = f"http://localhost:{arg.split('=')[1]}"
-    elif arg == "--bot":
-        USE_BOT = True
-    elif arg == "--matchmaking":
-        MATCHMAKING = True
-    elif arg.startswith("--player="):
-        # Override the default player ID with a specific one
-        PLAYER_ID = arg.split("=")[1]
+    if arg == "--port" or arg == "-p":
+        if i + 1 < len(sys.argv):
+            base_url = f"http://localhost:{sys.argv[i + 1]}"
+        else:
+            print("Error: --port requires a port number")
+            sys.exit(1)
+    elif arg == "--bot" or arg == "-b":
+        use_bot = True
+    elif arg == "--matchmaking" or arg == "-m":
+        matchmaking = True
+    elif arg == "--create-lobby" or arg == "-l":
+        matchmaking = True
+        create_lobby = True
+    elif arg == "--join" or arg == "-j":
+        if i + 1 < len(sys.argv):
+            matchmaking = True
+            join_lobby = sys.argv[i + 1].upper()
+        else:
+            print("Error: --join requires a lobby ID")
+            sys.exit(1)
+    elif arg == "--id" or arg == "-i":
+        if i + 1 < len(sys.argv):
+            player_id = sys.argv[i + 1]
+        else:
+            print("Error: --id requires a player ID")
+            sys.exit(1)
+    elif arg == "--game" or arg == "-g":
+        if i + 1 < len(sys.argv):
+            game_id = sys.argv[i + 1]
+        else:
+            print("Error: --game requires a game ID")
+            sys.exit(1)
 
-PLAYER_NAME = PLAYER_ID.upper()
+player_name = player_id.upper()
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +69,7 @@ async def _start_session (client: httpx.AsyncClient, game_id: str, player_id: st
     }
     if custom_data:
         payload["custom_data"] = custom_data
-    resp = await client.post(f"{BASE_URL}/session", json=payload)
+    resp = await client.post(f"{base_url}/session", json=payload)
     if resp.status_code != 200:
         print(f"Error starting session: {resp.status_code} - {resp.text}")
         return None
@@ -55,7 +77,7 @@ async def _start_session (client: httpx.AsyncClient, game_id: str, player_id: st
 
 
 async def _get_state (client: httpx.AsyncClient, session_id: str, player_id: str, token: str) -> dict[str, Any]:
-    resp = await client.get(f"{BASE_URL}/state", params={
+    resp = await client.get(f"{base_url}/state", params={
         "session_id": session_id,
         "player_id": player_id,
         "token": token,
@@ -65,7 +87,7 @@ async def _get_state (client: httpx.AsyncClient, session_id: str, player_id: str
 
 
 async def _send_action (client: httpx.AsyncClient, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any], nonce: int) -> None:
-    resp = await client.post(f"{BASE_URL}/action", json={
+    resp = await client.post(f"{base_url}/action", json={
         "session_id": session_id,
         "player_id": player_id,
         "token": token,
@@ -99,19 +121,30 @@ async def _read_input (prompt: str, timeout: float) -> str:
 async def run_client () -> None:
     async with httpx.AsyncClient() as client:
         # ---- create session ----
-        custom_data = {"use_bot": USE_BOT}
-        if MATCHMAKING:
+        custom_data: dict[str, Any] = {"use_bot": use_bot}
+        if matchmaking:
             custom_data["matchmaking"] = True
-        result = await _start_session(client, GAME_ID, PLAYER_ID, PLAYER_NAME, custom_data=custom_data)
+        if create_lobby:
+            custom_data["create_lobby"] = True
+        if join_lobby:
+            custom_data["join_lobby"] = join_lobby
+            
+        result = await _start_session(client, game_id, player_id, player_name, custom_data=custom_data)
         if result is None:
             print("Failed to create session. Is the server running?")
             return
 
         session_id = result["session_id"]
         token = result["token"]
+        lobby_id = result.get("lobby_id")
 
         print("=" * 40)
         print("  ROCK  PAPER  SCISSORS  (best of 3)")
+        if lobby_id and create_lobby:
+            print(f"  LOBBY CREATED. Code: {lobby_id}")
+            print(f"  Share with your opponent: python games/rps_client.py --join={lobby_id}")
+        elif lobby_id and join_lobby:
+            print(f"  LOBBY: {lobby_id}")
         print("=" * 40)
 
         last_state_version = -1
@@ -120,7 +153,7 @@ async def run_client () -> None:
         # ---- game loop ----
         while True:
             # Fetch current state
-            state = await _get_state(client, session_id, PLAYER_ID, token)
+            state = await _get_state(client, session_id, player_id, token)
 
             current_version = state.get("state_version", 0)
             if current_version == last_state_version:
@@ -163,7 +196,7 @@ async def run_client () -> None:
                     await _send_action(
                         client,
                         session_id=session_id,
-                        player_id=PLAYER_ID,
+                        player_id=player_id,
                         token=token,
                         action_type="move",
                         payload={"choice": choice},
