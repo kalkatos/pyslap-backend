@@ -90,17 +90,23 @@ async def _start_session (client: httpx.AsyncClient, game_id: str, player_id: st
     return resp.json()
 
 
-async def _get_state (client: httpx.AsyncClient, session_id: str, player_id: str, token: str) -> dict[str, Any]:
+async def _get_state (client: httpx.AsyncClient, session_id: str, player_id: str, token: str) -> dict[str, Any] | None:
     resp = await client.get(f"{base_url}/state", params={
         "session_id": session_id,
         "player_id": player_id,
         "token": token,
     })
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        try:
+            err_msg = resp.json().get("detail", f"Error: {resp.status_code} - {resp.text}")
+        except Exception:
+            err_msg = f"Error: {resp.status_code} - {resp.text}"
+        print(f"\n[Warning] Failed to get state: {err_msg}")
+        return None
     return resp.json()
 
 
-async def _send_action (client: httpx.AsyncClient, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any], nonce: int) -> None:
+async def _send_action (client: httpx.AsyncClient, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any], nonce: int) -> bool:
     resp = await client.post(f"{base_url}/action", json={
         "session_id": session_id,
         "player_id": player_id,
@@ -109,7 +115,14 @@ async def _send_action (client: httpx.AsyncClient, session_id: str, player_id: s
         "payload": payload,
         "nonce": nonce,
     })
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        try:
+            err_msg = resp.json().get("detail", f"Error: {resp.status_code} - {resp.text}")
+        except Exception:
+            err_msg = f"Error: {resp.status_code} - {resp.text}"
+        print(f"\n[Warning] Failed to send action: {err_msg}")
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +180,9 @@ async def run_client () -> None:
         while True:
             # Fetch current state
             state = await _get_state(client, session_id, player_id, token)
+            if state is None:
+                await asyncio.sleep(1.0)
+                continue
 
             current_version = state.get("state_version", 0)
             if current_version == last_state_version:
