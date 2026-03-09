@@ -13,11 +13,11 @@ from typing import Any
 import httpx
 
 base_url = "http://localhost:8000"
-use_bot = False
-matchmaking = False
+use_bot = True
+matchmaking = True
 create_lobby = False
 join_lobby = None
-player_id = "player1"
+player_id = "undefined-unknown"
 game_id = "rps"
 
 for i, arg in enumerate(sys.argv):
@@ -53,6 +53,16 @@ for i, arg in enumerate(sys.argv):
         else:
             print("Error: --game requires a game ID")
             sys.exit(1)
+    elif arg == "--help" or arg == "-h":
+        print("Options:")
+        print("  --matchmaking or -m  -> match any player")
+        print("  --bot or -b          -> play against a bot")
+        print("  --create-lobby or -l -> create a private lobby")
+        print("  --join or -j [ID]    -> join a private lobby")
+        print("  --port or -p [PORT]  -> connect to specific port")
+        print("  --game or -g [ID]    -> play a specific game (default: rps)")
+        print("  --help or -h         -> show this help message")
+        sys.exit(0)
 
 player_name = player_id.upper()
 
@@ -71,7 +81,11 @@ async def _start_session (client: httpx.AsyncClient, game_id: str, player_id: st
         payload["custom_data"] = custom_data
     resp = await client.post(f"{base_url}/session", json=payload)
     if resp.status_code != 200:
-        print(f"Error starting session: {resp.status_code} - {resp.text}")
+        try:
+            err_msg = resp.json().get("detail", f"Error: {resp.status_code} - {resp.text}")
+        except Exception:
+            err_msg = f"Error: {resp.status_code} - {resp.text}"
+        print(err_msg)
         return None
     return resp.json()
 
@@ -131,7 +145,6 @@ async def run_client () -> None:
             
         result = await _start_session(client, game_id, player_id, player_name, custom_data=custom_data)
         if result is None:
-            print("Failed to create session. Is the server running?")
             return
 
         session_id = result["session_id"]

@@ -80,10 +80,13 @@ async def start_session (request: Request, req: StartSessionRequest):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid role specified.")
         
-    result = entrypoint.start_session(req.game_id, req.player_id, req.player_name, req_role, req.custom_data)
-    if not result:
-        raise HTTPException(status_code=400, detail="Failed to start session. Check game_id or player details.")
-    return result
+    try:
+        result = entrypoint.start_session(req.game_id, req.player_id, req.player_name, req_role, req.custom_data)
+        if not result:
+            raise HTTPException(status_code=400, detail="Failed to start session. Check game_id or player details.")
+        return result
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
 
 @app.post("/action")
 @limiter.limit("60/minute")

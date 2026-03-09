@@ -72,7 +72,7 @@ class PySlapEngine:
         # Verify requester
         player = self.security.verify_identity(requester_id, requester_name, role)
         if not player:
-            return None
+            raise PermissionError("Player not registered, please register first")
 
         # Fetch Game Configurations
         config_data = self.db.read("game_configs", game_id) or {}
