@@ -7,7 +7,6 @@ Usage:
 
 import asyncio
 import sys
-import uuid
 from typing import Any
 
 import httpx
@@ -186,7 +185,7 @@ async def run_client () -> None:
 
             current_version = state.get("state_version", 0)
             if current_version == last_state_version:
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.25)
                 continue
                 
             last_state_version = current_version
