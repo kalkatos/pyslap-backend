@@ -8,11 +8,13 @@ This document provides technical blueprints for future PySlap enhancements. Refe
 
 ## **Important**: For any of these changes, no new entrypoint should be created, only if stricly necessary to avoid security risks or poor performance.
 
+Features already done are marked with ✅DONE
+
 ---
 
 ## ✨ Feature Improvements
 
-### 1. Private Lobby System
+### ✅DONE 1. Private Lobby System
 *   **Description**: Add a lobby functionality to the matchmaking system. Allow players to create a private session identified by a user-friendly 6-letter ID (e.g., "QOEMDU") that can be shared with friends.
 *   **Changes**:
     *   Update `Session` model to include a `lobby_id` field.
