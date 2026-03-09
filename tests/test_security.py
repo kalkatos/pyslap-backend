@@ -33,13 +33,24 @@ def test_verify_identity_success():
 
 def test_verify_identity_unknown_player():
     mock_db = MagicMock()
-    mock_db.read.return_value = None  # Player not found
+    mock_db.read.return_value = None  # Player not found initially
     security = SecurityManager(mock_db)
     
     auth_token = security.create_debug_external_token("unknown", "Alice")
     player = security.verify_identity(auth_token)
     
-    assert player is None
+    # Should automatically create player (JIT)
+    assert player is not None
+    assert player.player_id == "unknown"
+    assert player.name == "Alice"
+    
+    # Verify DB create was called correctly
+    assert mock_db.create.call_count == 1
+    args, kwargs = mock_db.create.call_args
+    assert args[0] == "players"
+    assert args[1]["id"] == "unknown"
+    assert args[1]["name"] == "Alice"
+    assert "registered_at" in args[1]
 
 
 def test_validate_request_token():

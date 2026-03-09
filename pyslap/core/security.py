@@ -44,7 +44,14 @@ class SecurityManager:
                 
             record = self.db.read("players", player_id)
             if not record:
-                return None  # Unknown player — reject
+                # Just-In-Time (JIT) Registration
+                # Automatically create unknown players using data from their JWT token
+                self.db.create("players", {
+                    "id": player_id,
+                    "name": name,
+                    "registered_at": time.time()
+                })
+                record = {"id": player_id, "name": name}
             
             final_name = record.get("name", name)
             return Player(player_id=player_id, name=final_name, role=role)
