@@ -13,12 +13,15 @@ from typing import Any
 import httpx
 
 base_url = "http://localhost:8000"
-use_bot = True
-matchmaking = True
+use_bot = False
+matchmaking = False
 create_lobby = False
 join_lobby = None
 player_id = "undefined-unknown"
 game_id = "rps"
+
+if len(sys.argv) == 1:
+    use_bot = True
 
 for i, arg in enumerate(sys.argv):
     if arg == "--port" or arg == "-p":

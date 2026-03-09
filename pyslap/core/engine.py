@@ -198,7 +198,7 @@ class PySlapEngine:
 
         session_data.pop("id", None)
         session = Session(**session_data)
-        if session.status != SessionStatus.ACTIVE:
+        if session.status not in (SessionStatus.ACTIVE, SessionStatus.MATCHMAKING):
             return False
 
         current_time = time.time()
