@@ -167,7 +167,7 @@ async def run_client () -> None:
         print("  ROCK  PAPER  SCISSORS  (best of 3)")
         if lobby_id and create_lobby:
             print(f"  LOBBY CREATED. Code: {lobby_id}")
-            print(f"  Share with your opponent: python games/rps_client.py --join={lobby_id}")
+            print(f"  Share with your opponent: python games/rps_client.py --join {lobby_id}")
         elif lobby_id and join_lobby:
             print(f"  LOBBY: {lobby_id}")
         print("=" * 40)
