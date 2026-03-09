@@ -50,7 +50,8 @@ def test_local_entrypoint_flow(setup_engine):
     # PySlapEngine.security uses db.
     db.create("players", {"id": player_id, "name": player_name, "token": "secret_token"})
     
-    session_info = engine.create_session("rps", player_id, player_name)
+    auth_token = engine.security.create_debug_external_token(player_id, player_name)
+    session_info = engine.create_session("rps", auth_token)
     assert session_info is not None
     session_id = session_info["session_id"]
     token = session_info["token"]
@@ -90,7 +91,8 @@ def test_local_entrypoint_registers_ack(setup_engine):
     player_id = "player1"
     player_name = "Alex"
     db.create("players", {"id": player_id, "name": player_name, "token": "secret_token"})
-    session_info = engine.create_session("rps", player_id, player_name)
+    auth_token = engine.security.create_debug_external_token(player_id, player_name)
+    session_info = engine.create_session("rps", auth_token)
     session_id = session_info["session_id"]
     token = session_info["token"]
     

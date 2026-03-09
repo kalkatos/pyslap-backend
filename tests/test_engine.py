@@ -36,12 +36,16 @@ def test_engine_create_session():
     mock_scheduler = MagicMock()
     games = {"dummy": DummyGame()}
     
-    # Mock DB read for GameConfig
-    mock_db.read.return_value = {"update_interval_ms": 1000}
+    def mock_db_read(coll, id):
+        if coll == "players": return {"id": id, "name": "Alice"}
+        if coll == "game_configs": return {"update_interval_ms": 1000}
+        return None
+    mock_db.read.side_effect = mock_db_read
     
     engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
     
-    result = engine.create_session("dummy", "p1", "Alice")
+    auth_token = engine.security.create_debug_external_token("p1", "Alice")
+    result = engine.create_session("dummy", auth_token)
     
     assert result is not None
     assert "session_id" in result
@@ -62,7 +66,8 @@ def test_engine_create_session():
 
 def test_engine_create_session_unknown_game():
     engine = PySlapEngine(db=MagicMock(), scheduler=MagicMock(), games_registry={})
-    result = engine.create_session("unknown", "p1", "Alice")
+    auth_token = engine.security.create_debug_external_token("p1", "Alice")
+    result = engine.create_session("unknown", auth_token)
     assert result is None
 
 

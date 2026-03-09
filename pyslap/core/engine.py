@@ -61,7 +61,7 @@ class PySlapEngine:
             self.db.delete("sessions", session_id)
 
     def create_session(
-        self, game_id: str, requester_id: str, requester_name: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None
+        self, game_id: str, auth_token: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None
     ) -> dict[str, Any] | None:
         """
         Creates a new session, generates tokens, and schedules the first update.
@@ -69,10 +69,10 @@ class PySlapEngine:
         if game_id not in self.games:
             return None  # Unknown game
 
-        # Verify requester
-        player = self.security.verify_identity(requester_id, requester_name, role)
+        # Verify requester using external auth token
+        player = self.security.verify_identity(auth_token, role)
         if not player:
-            raise PermissionError("Player not registered, please register first")
+            raise PermissionError("Player not registered or invalid auth token, please register first")
 
         # Fetch Game Configurations
         config_data = self.db.read("game_configs", game_id) or {}

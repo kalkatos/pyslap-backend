@@ -43,7 +43,8 @@ def test_create_matchmaking_session():
     
     engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
     
-    result = engine.create_session("mm_game", "p1", "Alice", custom_data={"matchmaking": True})
+    auth_token = engine.security.create_debug_external_token("p1", "Alice")
+    result = engine.create_session("mm_game", auth_token, custom_data={"matchmaking": True})
     
     assert result is not None
     
@@ -92,7 +93,8 @@ def test_join_matchmaking_session():
     engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
     
     # 2. Second player joins
-    result = engine.create_session("mm_game", "p2", "Bob", custom_data={"matchmaking": True})
+    auth_token = engine.security.create_debug_external_token("p2", "Bob")
+    result = engine.create_session("mm_game", auth_token, custom_data={"matchmaking": True})
     
     assert result is not None
     assert result["session_id"] == "sid_1"

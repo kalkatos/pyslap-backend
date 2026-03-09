@@ -6,7 +6,7 @@ from pyslap.models.domain import GameState, Role
 
 class EntrypointInterface(ABC):
     @abstractmethod
-    def start_session(self, game_id: str, player_id: str, player_name: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    def start_session(self, game_id: str, auth_token: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None) -> dict[str, Any] | None:
         pass
 
     @abstractmethod

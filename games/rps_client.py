@@ -7,7 +7,10 @@ Usage:
 
 import asyncio
 import sys
+import time
 from typing import Any
+
+import jwt
 
 import httpx
 
@@ -70,11 +73,10 @@ player_name = player_id.upper()
 # HTTP helpers (async)
 # ---------------------------------------------------------------------------
 
-async def _start_session (client: httpx.AsyncClient, game_id: str, player_id: str, player_name: str, custom_data: dict[str, Any] | None = None) -> dict[str, Any] | None:
+async def _start_session (client: httpx.AsyncClient, game_id: str, auth_token: str, custom_data: dict[str, Any] | None = None) -> dict[str, Any] | None:
     payload: dict[str, Any] = {
         "game_id": game_id,
-        "player_id": player_id,
-        "player_name": player_name,
+        "auth_token": auth_token,
     }
     if custom_data:
         payload["custom_data"] = custom_data
@@ -155,7 +157,14 @@ async def run_client () -> None:
         if join_lobby:
             custom_data["join_lobby"] = join_lobby
             
-        result = await _start_session(client, game_id, player_id, player_name, custom_data=custom_data)
+        # mock external auth token using default external_secret
+        auth_token = jwt.encode(
+            {"player_id": player_id, "name": player_name, "exp": time.time() + 86400},
+            "pyslap_default_external_secret_32_bytes_min",
+            algorithm="HS256"
+        )
+            
+        result = await _start_session(client, game_id, auth_token, custom_data=custom_data)
         if result is None:
             return
 

@@ -22,7 +22,8 @@ def test_verify_identity_success():
     mock_db.read.return_value = {"id": "p1", "name": "Alice"}  # Player exists
     security = SecurityManager(mock_db)
     
-    player = security.verify_identity(player_id="p1", name="Alice")
+    auth_token = security.create_debug_external_token("p1", "Alice")
+    player = security.verify_identity(auth_token)
     
     assert player is not None
     assert player.player_id == "p1"
@@ -35,7 +36,8 @@ def test_verify_identity_unknown_player():
     mock_db.read.return_value = None  # Player not found
     security = SecurityManager(mock_db)
     
-    player = security.verify_identity(player_id="unknown", name="Alice")
+    auth_token = security.create_debug_external_token("unknown", "Alice")
+    player = security.verify_identity(auth_token)
     
     assert player is None
 

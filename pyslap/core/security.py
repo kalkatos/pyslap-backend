@@ -13,9 +13,10 @@ class SecurityManager:
     tokens, and checks incoming request tokens.
     """
 
-    def __init__(self, db: DatabaseInterface, secret_key: str = "pyslap_default_secret_key_32_bytes_min"):
+    def __init__(self, db: DatabaseInterface, secret_key: str = "pyslap_default_secret_key_32_bytes_min", external_secret: str = "pyslap_default_external_secret_32_bytes_min"):
         self.db = db
         self.secret_key = secret_key
+        self.external_secret = external_secret
 
     def generate_session_token (self, player_id: str, session_id: str, role: Role = Role.PLAYER) -> str:
         """Generates a signed JWT session token."""
@@ -27,16 +28,37 @@ class SecurityManager:
         }
         return jwt.encode(payload, self.secret_key, algorithm="HS256")
 
-    def verify_identity (self, player_id: str, name: str, role: Role = Role.PLAYER) -> Optional[Player]:
+    def verify_identity (self, auth_token: str, role: Role = Role.PLAYER) -> Optional[Player]:
         """
-        Verifies the player exists in the database.
-        Returns a Player without a token (token is generated per-session later).
-        Returns None if the player_id is not registered.
+        Verifies the player exists using an external auth_token (JWT).
+        Returns a Player without a PySlap session token.
+        Returns None if the auth_token is invalid or player_id is not registered.
         """
-        record = self.db.read("players", player_id)
-        if not record:
-            return None  # Unknown player — reject
-        return Player(player_id=player_id, name=name, role=role)
+        try:
+            payload = jwt.decode(auth_token, self.external_secret, algorithms=["HS256"])
+            player_id = payload.get("player_id")
+            name = payload.get("name", player_id)
+            
+            if not player_id:
+                return None
+                
+            record = self.db.read("players", player_id)
+            if not record:
+                return None  # Unknown player — reject
+            
+            final_name = record.get("name", name)
+            return Player(player_id=player_id, name=final_name, role=role)
+        except jwt.PyJWTError:
+            return None
+
+    def create_debug_external_token (self, player_id: str, name: str) -> str:
+        """Helper to create a valid external auth token for local testing."""
+        payload = {
+            "player_id": player_id,
+            "name": name,
+            "exp": time.time() + 86400
+        }
+        return jwt.encode(payload, self.external_secret, algorithm="HS256")
 
     def validate_request_token (self, session_id: str, player_id: str, token: str) -> bool:
         """

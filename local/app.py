@@ -45,8 +45,7 @@ async def rate_limit_handler (request: Request, exc: Exception) -> Response:
 
 class StartSessionRequest(BaseModel):
     game_id: str
-    player_id: str
-    player_name: str
+    auth_token: str
     role: str = "player"
     custom_data: Dict[str, Any] | None = None
 
@@ -81,7 +80,7 @@ async def start_session (request: Request, req: StartSessionRequest):
         raise HTTPException(status_code=400, detail="Invalid role specified.")
         
     try:
-        result = entrypoint.start_session(req.game_id, req.player_id, req.player_name, req_role, req.custom_data)
+        result = entrypoint.start_session(req.game_id, req.auth_token, req_role, req.custom_data)
         if not result:
             raise HTTPException(status_code=400, detail="Failed to start session. Check game_id or player details.")
         return result
