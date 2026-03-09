@@ -20,9 +20,6 @@ join_lobby = None
 player_id = "undefined-unknown"
 game_id = "rps"
 
-if len(sys.argv) == 1:
-    use_bot = True
-
 for i, arg in enumerate(sys.argv):
     if arg == "--port" or arg == "-p":
         if i + 1 < len(sys.argv):
@@ -30,8 +27,6 @@ for i, arg in enumerate(sys.argv):
         else:
             print("Error: --port requires a port number")
             sys.exit(1)
-    elif arg == "--bot" or arg == "-b":
-        use_bot = True
     elif arg == "--matchmaking" or arg == "-m":
         matchmaking = True
     elif arg == "--create-lobby" or arg == "-l":
@@ -59,13 +54,15 @@ for i, arg in enumerate(sys.argv):
     elif arg == "--help" or arg == "-h":
         print("Options:")
         print("  --matchmaking or -m  -> match any player")
-        print("  --bot or -b          -> play against a bot")
         print("  --create-lobby or -l -> create a private lobby")
         print("  --join or -j [ID]    -> join a private lobby")
-        print("  --port or -p [PORT]  -> connect to specific port")
+        print("  --port or -p [PORT]  -> connect to specific port (default: 8000)")
         print("  --game or -g [ID]    -> play a specific game (default: rps)")
         print("  --help or -h         -> show this help message")
         sys.exit(0)
+
+if not matchmaking and not create_lobby and not join_lobby:
+    use_bot = True
 
 player_name = player_id.upper()
 
