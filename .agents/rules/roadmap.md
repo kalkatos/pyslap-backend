@@ -51,7 +51,7 @@ Features already done are marked with ✅DONE
 *   **Testing**: Send a chat action from one client and verify it appears in the display of the other client.
 
 ## Fixes
-### 6. The "Joiner" Phase Paradox
+### ✅DONE 6. The "Joiner" Phase Paradox
 *   **Description**: Sessions can get stuck in "waiting_for_players" if the joiner doesn't trigger a tick.
 *   **Definitive Fix**: The `PySlapEngine` must automatically trigger a state update and version bump as soon as a session transitions from `MATCHMAKING` to `ACTIVE`, ensuring the game starts immediately without waiting for the next periodic tick. (update rps.py accordingly)
 
