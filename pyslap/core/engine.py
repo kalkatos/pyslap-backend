@@ -111,18 +111,23 @@ class PySlapEngine:
                 player.token = self.security.generate_session_token(player.player_id, s_id, role)
                 session.players[player.player_id] = player
                 
+                state_data = self.db.read("states", s_id)
+                if not state_data:
+                    continue
+                state_data.pop("id", None)
+                state = GameState(**state_data)
+
+                # Assign sticky slot if not already assigned
+                if player.player_id not in state.slots.values():
+                    slot_id = f"slot_{len(state.slots)}"
+                    state.slots[slot_id] = player.player_id
+                
                 if len(session.players) >= config.max_players:
                     session.status = SessionStatus.ACTIVE
                 
                 updated_session_data = asdict(session)
                 updated_session_data["id"] = s_id
                 self.db.update("sessions", s_id, updated_session_data)
-                
-                state_data = self.db.read("states", s_id)
-                if not state_data:
-                    continue
-                state_data.pop("id", None)
-                state = GameState(**state_data)
                 
                 # Record phase before game-rules touch it
                 original_phase = state.public_state.get("phase")
@@ -178,6 +183,9 @@ class PySlapEngine:
         game_state.session_id = session_id
         game_state.last_update_timestamp = current_time
         game_state.phase_ack = {}
+        
+        # Assign first sticky slot
+        game_state.slots["slot_0"] = player.player_id
 
         # Save to database
         session_data = asdict(session)

@@ -71,6 +71,15 @@ class RpsGameRules(GameRules):
         is_matchmaking = custom_data.get("matchmaking", False)
         initial_phase = "waiting_for_players" if is_matchmaking else "waiting_for_move"
 
+        # Initialize slots if not provided (for engine-less tests)
+        slots = {}
+        if players:
+            slots["slot_0"] = players[0].player_id
+            if len(players) > 1:
+                slots["slot_1"] = players[1].player_id
+            elif use_bot:
+                slots["slot_1"] = "computer"
+
         return GameState(
             session_id="",
             public_state={
@@ -86,6 +95,7 @@ class RpsGameRules(GameRules):
                 "round_start_ms": 0,
             },
             private_state=private_state,
+            slots=slots,
             is_game_over=False,
             last_update_timestamp=0,
         )
@@ -152,9 +162,15 @@ class RpsGameRules(GameRules):
             ps["p2_score"] += 1
         # draw: no score change, replay the round
 
-        # Inject personalized values into private state for each player
-        player_ids = list(state.private_state.keys())
-        p1_id, p2_id = player_ids[0], player_ids[1]
+        # Use sticky slots to identify players, fallback to private_state keys for compatibility
+        p1_id = state.slots.get("slot_0")
+        p2_id = state.slots.get("slot_1")
+
+        if not p1_id or not p2_id:
+            player_ids = list(state.private_state.keys())
+            if len(player_ids) < 2:
+                return state
+            p1_id, p2_id = player_ids[0], player_ids[1]
 
         state.private_state[p1_id]["my_choice"] = choices[0]
         state.private_state[p1_id]["opponent_choice"] = choices[1]

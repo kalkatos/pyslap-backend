@@ -58,6 +58,7 @@ class GameState:
     phase_ack_since: float = 0.0  # timestamp when the gated phase started
     public_state: dict[str, Any] = field(default_factory=dict)
     private_state: dict[str, dict[str, Any]] = field(default_factory=dict) # player_id -> private state
+    slots: dict[str, str] = field(default_factory=dict) # slot_id -> player_id
     last_nonces: dict[str, int] = field(default_factory=dict) # player_id -> last accepted nonce
     last_update_timestamp: float = 0.0
 
