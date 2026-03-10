@@ -103,9 +103,6 @@ class RpsGameRules(GameRules):
         if len(state.private_state) >= 2 and state.public_state.get("phase") == "waiting_for_players":
             state.public_state["phase"] = "waiting_for_move"
             state.public_state["round_start_ms"] = 0
-            state.state_version += 1
-            # Explicitly reset phase_ack
-            state.phase_ack = {p: False for p in state.private_state.keys()}
         
         return state
 

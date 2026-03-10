@@ -124,7 +124,17 @@ class PySlapEngine:
                 state_data.pop("id", None)
                 state = GameState(**state_data)
                 
+                # Record phase before game-rules touch it
+                original_phase = state.public_state.get("phase")
+
                 state = self.games[game_id].setup_player_state(state, player)
+
+                # Engine-owned version bump on phase change (mirrors process_update_loop)
+                new_phase = state.public_state.get("phase")
+                if new_phase != original_phase:
+                    state.state_version += 1
+                    state.phase_ack = {p: False for p in session.players.keys()}
+                    state.phase_ack_since = time.time()
                 
                 updated_state_data = asdict(state)
                 updated_state_data["id"] = s_id
