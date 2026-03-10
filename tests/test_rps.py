@@ -11,11 +11,16 @@ from games.rps import RpsGameRules, _resolve_round, _initial_public_state
 
 
 # ------------------------------------------------------------------ helpers
-def _make_state(phase: str = "waiting_for_move", **overrides) -> GameState:
+def _make_state (phase: str = "waiting_for_move", players: list[str] | None = None, **overrides) -> GameState:
     ps = _initial_public_state()
     ps["phase"] = phase
     ps.update(overrides)
-    return GameState(session_id="test", public_state=ps)
+    default_players = players or ["p1", "p2"]
+    private_state = {
+        pid: {"choice": "", "my_choice": None, "opponent_choice": None, "my_score": 0, "opponent_score": 0}
+        for pid in default_players
+    }
+    return GameState(session_id="test", public_state=ps, private_state=private_state)
 
 
 def _make_action(choice: str = "R", computer_choice: str = "S", player_id: str = "p1") -> Action:
