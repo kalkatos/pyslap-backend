@@ -53,24 +53,24 @@ Features already done are marked with ✅DONE
 ## Fixes
 ### 6. The "Joiner" Phase Paradox
 *   **Description**: Sessions can get stuck in "waiting_for_players" if the joiner doesn't trigger a tick.
-*   **Definitive Fix**: The `PySlapEngine` must automatically trigger a state update and version bump as soon as a session transitions from `MATCHMAKING` to `ACTIVE`, ensuring the game starts immediately without waiting for the next periodic tick.
+*   **Definitive Fix**: The `PySlapEngine` must automatically trigger a state update and version bump as soon as a session transitions from `MATCHMAKING` to `ACTIVE`, ensuring the game starts immediately without waiting for the next periodic tick. (update rps.py accordingly)
 
-### 7. Deterministic Player Roles
-*   **Description**: Relying on dictionary key order to determine Player 1 vs Player 2 is unstable across systems.
-*   **Definitive Fix**: The framework must assign and persist immutable player indices or roles (e.g., `player_index: 0, 1...`) upon session joining, providing a stable reference for game logic that does not depend on dictionary iteration order.
+### 7. Sticky Slot Assignment
+*   **Description**: Relying on dictionary key order or dynamic list indices is brittle, as player positions shift if someone leaves or disconnects.
+*   **Definitive Fix**: The framework must implement a **Sticky Slot** system. When a player joins, they are assigned a permanent slot identifier (e.g., `slot_0`, `slot_1`) stored in a dedicated mapping (e.g., `GameState.slots`) and persisted in the DB. This assignment is immutable for the duration of the session; if a player leaves, their slot remains reserved or empty, ensuring other players' references never shift. (update rps.py accordingly)
 
 ### 8. State Update Integrity
 *   **Description**: Overwriting the entire `private_state` for a player erases other persistent data like scores.
-*   **Definitive Fix**: Implement a protected state mutation interface in the Engine that enforces partial updates to `private_state` and `public_state`, preventing game logic from accidentally nullifying or overwriting existing persistent data like scores.
+*   **Definitive Fix**: Implement a protected state mutation interface in the Engine that enforces partial updates to `private_state` and `public_state`, preventing game logic from accidentally nullifying or overwriting existing persistent data like scores. (update rps.py accordingly)
 
 ### 9. Native Gated Transitions
 *   **Description**: Gated phases can block game progress if players don't acknowledge the transition.
-*   **Definitive Fix**: Build the `ack` (acknowledgment) mechanism directly into the `PySlapEngine` as a core framework action. This allows any game to define gated phases that the Engine manages automatically, without requiring custom "ack" logic in every game.
+*   **Definitive Fix**: Build the `ack` (acknowledgment) mechanism directly into the `PySlapEngine` as a core framework action. This allows any game to define gated phases that the Engine manages automatically, without requiring custom "ack" logic in every game. (update rps.py accordingly)
 
 ### 10. Managed Determinism
 *   **Description**: Unseeded randomness can cause divergent states if a tick is retried by the provider.
-*   **Definitive Fix**: The Engine must manage a `random_seed` within the `GameState` and provide a pre-seeded, deterministic random generator to the `GameRules` to ensure execution is consistent across serverless retries.
+*   **Definitive Fix**: The Engine must manage a `random_seed` within the `GameState` and provide a pre-seeded, deterministic random generator to the `GameRules` to ensure execution is consistent across serverless retries. (update rps.py accordingly)
 
 ### 11. Real-Time Delta Enforcement
 *   **Description**: Assuming a fixed 500ms interval for logic cycles leads to jittery or incorrect timing (e.g. cooldowns).
-*   **Definitive Fix**: The Engine must handle the precise calculation of `delta_ms` based on actual database timestamps, ensuring that `GameRules` receive accurate time-step information regardless of external scheduling delays or serverless cold starts.
+*   **Definitive Fix**: The Engine must handle the precise calculation of `delta_ms` based on actual database timestamps, ensuring that `GameRules` receive accurate time-step information regardless of external scheduling delays or serverless cold starts. (update rps.py accordingly)
