@@ -51,26 +51,26 @@ Features already done are marked with ✅DONE
 *   **Testing**: Send a chat action from one client and verify it appears in the display of the other client.
 
 ## Fixes
-### 1. The "Joiner" Phase Paradox
+### 6. The "Joiner" Phase Paradox
 *   **Description**: Sessions can get stuck in "waiting_for_players" if the joiner doesn't trigger a tick.
-*   **Fix**: Ensure `setup_player_state` advances the game phase and increments the state version when player requirements are met.
+*   **Definitive Fix**: The `PySlapEngine` must automatically trigger a state update and version bump as soon as a session transitions from `MATCHMAKING` to `ACTIVE`, ensuring the game starts immediately without waiting for the next periodic tick.
 
-### 2. Deterministic Player Roles
+### 7. Deterministic Player Roles
 *   **Description**: Relying on dictionary key order to determine Player 1 vs Player 2 is unstable across systems.
-*   **Fix**: Explicitly store `p1_id`, `p2_id` (etc.) in the `public_state` when a match begins.
+*   **Definitive Fix**: The framework must assign and persist immutable player indices or roles (e.g., `player_index: 0, 1...`) upon session joining, providing a stable reference for game logic that does not depend on dictionary iteration order.
 
-### 3. Partial State Updates
+### 8. State Update Integrity
 *   **Description**: Overwriting the entire `private_state` for a player erases other persistent data like scores.
-*   **Fix**: Always update specific keys within the player states instead of replacing the dictionary.
+*   **Definitive Fix**: Implement a protected state mutation interface in the Engine that enforces partial updates to `private_state` and `public_state`, preventing game logic from accidentally nullifying or overwriting existing persistent data like scores.
 
-### 4. Gated Phase Management
+### 9. Native Gated Transitions
 *   **Description**: Gated phases can block game progress if players don't acknowledge the transition.
-*   **Fix**: Implement an explicit `ack` action and automate it in the client implementation.
+*   **Definitive Fix**: Build the `ack` (acknowledgment) mechanism directly into the `PySlapEngine` as a core framework action. This allows any game to define gated phases that the Engine manages automatically, without requiring custom "ack" logic in every game.
 
-### 5. Serverless Determinism
+### 10. Managed Determinism
 *   **Description**: Unseeded randomness can cause divergent states if a tick is retried by the provider.
-*   **Fix**: Store random seeds in the `GameState` and use `random.Random(seed)` for all game-critical logic.
+*   **Definitive Fix**: The Engine must manage a `random_seed` within the `GameState` and provide a pre-seeded, deterministic random generator to the `GameRules` to ensure execution is consistent across serverless retries.
 
-### 6. Frame-Rate Independence
+### 11. Real-Time Delta Enforcement
 *   **Description**: Assuming a fixed 500ms interval for logic cycles leads to jittery or incorrect timing (e.g. cooldowns).
-*   **Fix**: Always use the `delta_ms` parameter in `apply_update_tick` for time-based calculations.
+*   **Definitive Fix**: The Engine must handle the precise calculation of `delta_ms` based on actual database timestamps, ensuring that `GameRules` receive accurate time-step information regardless of external scheduling delays or serverless cold starts.
