@@ -77,3 +77,46 @@ def test_generate_and_decode_token_with_role():
     assert payload["player_id"] == "p1"
     assert payload["session_id"] == "sid_1"
     assert payload["role"] == "spectator"
+
+
+def test_generate_guest_auth_token():
+    mock_db = MagicMock()
+    security = SecurityManager(mock_db)
+    
+    guest_token = security.generate_guest_auth_token()
+    
+    # Needs external_secret to decode
+    payload = jwt.decode(guest_token, security.external_secret, algorithms=["HS256"])
+    assert payload.get("is_guest") is True
+    player_id = payload.get("player_id")
+    assert isinstance(player_id, str)
+    assert player_id.startswith("anon_")
+
+
+def test_verify_identity_with_expired_guest():
+    mock_db = MagicMock()
+    
+    # Simulate a guest that registered 48 hours ago
+    import time
+    mock_db.read.return_value = {
+        "id": "anon_old",
+        "name": "Old Guest",
+        "registered_at": time.time() - 172800,  # 48 hours ago
+        "is_guest": True
+    }
+    
+    security = SecurityManager(mock_db)
+    
+    # Create a token for this old guest
+    payload = {
+        "player_id": "anon_old",
+        "name": "Old Guest",
+        "is_guest": True,
+        "exp": time.time() + 86400
+    }
+    guest_token = jwt.encode(payload, security.external_secret, algorithm="HS256")
+    
+    # Verification should FAIL because guest TTL (24h default) has expired
+    player = security.verify_identity(guest_token)
+    assert player is None
+

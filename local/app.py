@@ -17,13 +17,7 @@ from games.rps import RpsGameRules
 
 # Initialize components
 db = SQLiteDatabase()
-db.create("players", {"id": "player1", "name": "Player 1", "token": "fake_token"})
-db.create("players", {"id": "player2", "name": "Player 2", "token": "fake_token"})
-db.create("players", {"id": "0cc60167-8efe-44a4-afbf-579ae2022f41", "name": "UUID Player 1", "token": "fake_token"})
-db.create("players", {"id": "7c931abf-eb13-4154-9b92-6699ee36f88b", "name": "UUID Player 2", "token": "fake_token"})
-db.create("players", {"id": "computer", "name": "Computer", "token": "fake_token"})
 scheduler = LocalScheduler()
-
 # Register games
 games_registry = {
     "rps": RpsGameRules()

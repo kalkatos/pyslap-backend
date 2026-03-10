@@ -8,6 +8,7 @@ Usage:
 import asyncio
 import sys
 import time
+import uuid
 from typing import Any
 
 import jwt
@@ -19,7 +20,7 @@ use_bot = False
 matchmaking = False
 create_lobby = False
 join_lobby = None
-player_id = "undefined-unknown"
+player_id = f"p-{uuid.uuid4().hex[:4]}"
 game_id = "rps"
 
 for i, arg in enumerate(sys.argv):

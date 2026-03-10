@@ -93,10 +93,10 @@ class PySlapEngine:
         if custom_data and custom_data.get("matchmaking"):
             query_filters = {"game_id": game_id, "status": SessionStatus.MATCHMAKING}
             
-            # If a specific lobby is requested, filter by it instead of general game_id matchmaking
+            # If a specific lobby is requested, filter by it. 
+            # Otherwise, only match with sessions that have NO lobby_id (general matchmaking).
             join_lobby_id = custom_data.get("join_lobby")
-            if join_lobby_id:
-                query_filters["lobby_id"] = join_lobby_id
+            query_filters["lobby_id"] = join_lobby_id
 
             waiting_sessions = self.db.query("sessions", query_filters)
             

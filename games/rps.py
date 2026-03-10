@@ -110,7 +110,7 @@ class RpsGameRules(GameRules):
 
     def apply_action(self, action: Action, state: GameState) -> GameState:
         choice = action.payload["choice"].upper()
-        state.private_state[action.player_id] = {"choice": choice}
+        state.private_state[action.player_id]["choice"] = choice
 
         if len(state.private_state) < 2:
             return state
