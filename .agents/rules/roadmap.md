@@ -77,3 +77,6 @@ Features already done are marked with ✅DONE
 
 ### 12. Update README.md
 *   **Description**: Check if @pyslap\README.md is up to date with current codebase workflow, and update if necessary.
+
+### 13. Gather more features, fixes and improvements
+*   **Description**: Run through the code and find brittle points, bottlenecks, and code smells that can be fixed or improved. Also, identify what current games/ implementations do that could potentially be fixed definitively at the engine side.
