@@ -61,6 +61,7 @@ class GameState:
     slots: dict[str, str] = field(default_factory=dict) # slot_id -> player_id
     last_nonces: dict[str, int] = field(default_factory=dict) # player_id -> last accepted nonce
     last_update_timestamp: float = 0.0
+    random_seed: int = 0  # Deterministic RNG seed for serverless retries
 
     def update_public_state(self, updates: dict) -> None:
         """Merge updates into public_state. Only specified keys are changed; others are preserved."""

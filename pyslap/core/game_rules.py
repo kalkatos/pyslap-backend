@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import random
 from typing import Any, Optional
 
 from pyslap.models.domain import Action, GameState, Player
@@ -34,19 +35,23 @@ class GameRules(ABC):
         pass
 
     @abstractmethod
-    def apply_action(self, action: Action, state: GameState) -> GameState:
+    def apply_action(self, action: Action, state: GameState, rng: random.Random) -> GameState:
         """
         Applies a valid action to the GameState, modifying it accordingly.
         Returns the updated GameState.
+        Use the provided rng (pre-seeded Random instance) for any randomness
+        to ensure deterministic behavior across serverless retries.
         """
         pass
 
     @abstractmethod
-    def apply_update_tick(self, state: GameState, delta_ms: int) -> GameState:
+    def apply_update_tick(self, state: GameState, delta_ms: int, rng: random.Random) -> GameState:
         """
         Applies a regular time-based update tick to the game state.
         This allows for games that update passively over time (e.g. physics ticks).
         Returns the updated GameState.
+        Use the provided rng (pre-seeded Random instance) for any randomness
+        to ensure deterministic behavior across serverless retries.
         """
         pass
 

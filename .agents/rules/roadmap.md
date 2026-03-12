@@ -67,10 +67,13 @@ Features already done are marked with ✅DONE
 *   **Description**: Gated phases can block game progress if players don't acknowledge the transition.
 *   **Definitive Fix**: Build the `ack` (acknowledgment) mechanism directly into the `PySlapEngine` as a core framework action. This allows any game to define gated phases that the Engine manages automatically, without requiring custom "ack" logic in every game. (update rps.py accordingly)
 
-### 10. Managed Determinism
+### ✅DONE 10. Managed Determinism
 *   **Description**: Unseeded randomness can cause divergent states if a tick is retried by the provider.
 *   **Definitive Fix**: The Engine must manage a `random_seed` within the `GameState` and provide a pre-seeded, deterministic random generator to the `GameRules` to ensure execution is consistent across serverless retries. (update rps.py accordingly)
 
 ### 11. Real-Time Delta Enforcement
 *   **Description**: Assuming a fixed 500ms interval for logic cycles leads to jittery or incorrect timing (e.g. cooldowns).
 *   **Definitive Fix**: The Engine must handle the precise calculation of `delta_ms` based on actual database timestamps, ensuring that `GameRules` receive accurate time-step information regardless of external scheduling delays or serverless cold starts. (update rps.py accordingly)
+
+### 12. Update README.md
+*   **Description**: Check if @pyslap\README.md is up to date with current codebase workflow, and update if necessary.

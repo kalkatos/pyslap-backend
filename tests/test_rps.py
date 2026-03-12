@@ -4,7 +4,7 @@ Run with:  python -m pytest tests/test_rps.py -v
 """
 
 import random
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from pyslap.models.domain import Action, GameState
 from games.rps import RpsGameRules, _resolve_round, _initial_public_state
@@ -83,8 +83,9 @@ class TestValidateAction:
 class TestApplyAction:
     def test_player_wins_round(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("R", player_id="p1"), state)
-        state = rules.apply_action(_make_action("S", player_id="p2"), state)
+        rng = random.Random(42)
+        state = rules.apply_action(_make_action("R", player_id="p1"), state, rng)
+        state = rules.apply_action(_make_action("S", player_id="p2"), state, rng)
         assert state.public_state["last_p1_move"] == "R"
         assert state.public_state["last_p2_move"] == "S"
         assert state.public_state["last_round_winner"] == "p1"
@@ -92,23 +93,26 @@ class TestApplyAction:
 
     def test_computer_wins_round(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("S", player_id="p1"), state)
-        state = rules.apply_action(_make_action("R", player_id="p2"), state)
+        rng = random.Random(42)
+        state = rules.apply_action(_make_action("S", player_id="p1"), state, rng)
+        state = rules.apply_action(_make_action("R", player_id="p2"), state, rng)
         assert state.public_state["last_round_winner"] == "p2"
         assert state.public_state["p2_score"] == 1
 
     def test_draw_no_score_change(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("R", player_id="p1"), state)
-        state = rules.apply_action(_make_action("R", player_id="p2"), state)
+        rng = random.Random(42)
+        state = rules.apply_action(_make_action("R", player_id="p1"), state, rng)
+        state = rules.apply_action(_make_action("R", player_id="p2"), state, rng)
         assert state.public_state["last_round_winner"] == "draw"
         assert state.public_state["p1_score"] == 0
         assert state.public_state["p2_score"] == 0
 
     def test_lowercase_input_applies(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("r", player_id="p1"), state)
-        state = rules.apply_action(_make_action("S", player_id="p2"), state)
+        rng = random.Random(42)
+        state = rules.apply_action(_make_action("r", player_id="p1"), state, rng)
+        state = rules.apply_action(_make_action("S", player_id="p2"), state, rng)
         assert state.public_state["last_p1_move"] == "R"
         assert state.public_state["last_round_winner"] == "p1"
 
@@ -117,29 +121,31 @@ class TestApplyAction:
 class TestBestOfThree:
     def test_player_wins_match(self):
         state = _make_state()
+        rng = random.Random(42)
         # Win round 1
-        state = rules.apply_action(_make_action("R", player_id="p1"), state)
-        state = rules.apply_action(_make_action("S", player_id="p2"), state)
+        state = rules.apply_action(_make_action("R", player_id="p1"), state, rng)
+        state = rules.apply_action(_make_action("S", player_id="p2"), state, rng)
         assert state.public_state["phase"] == "round_complete"
 
         # Transition to next round
-        state = rules.apply_update_tick(state, 500)
+        state = rules.apply_update_tick(state, 500, rng)
         assert state.public_state["phase"] == "waiting_for_move"
 
         # Win round 2
-        state = rules.apply_action(_make_action("R", player_id="p1"), state)
-        state = rules.apply_action(_make_action("S", player_id="p2"), state)
+        state = rules.apply_action(_make_action("R", player_id="p1"), state, rng)
+        state = rules.apply_action(_make_action("S", player_id="p2"), state, rng)
         assert state.public_state["phase"] == "game_over"
         assert state.public_state["winner"] == "p1"
         assert rules.check_game_over(state) is True
 
     def test_computer_wins_match(self):
         state = _make_state()
-        state = rules.apply_action(_make_action("R", player_id="p1"), state)  # lose
-        state = rules.apply_action(_make_action("P", player_id="p2"), state)  # lose
-        state = rules.apply_update_tick(state, 500)
-        state = rules.apply_action(_make_action("R", player_id="p1"), state)  # lose
-        state = rules.apply_action(_make_action("P", player_id="p2"), state)  # lose
+        rng = random.Random(42)
+        state = rules.apply_action(_make_action("R", player_id="p1"), state, rng)  # lose
+        state = rules.apply_action(_make_action("P", player_id="p2"), state, rng)  # lose
+        state = rules.apply_update_tick(state, 500, rng)
+        state = rules.apply_action(_make_action("R", player_id="p1"), state, rng)  # lose
+        state = rules.apply_action(_make_action("P", player_id="p2"), state, rng)  # lose
         assert state.public_state["winner"] == "p2"
         assert rules.check_game_over(state) is True
 
@@ -148,14 +154,16 @@ class TestBestOfThree:
 class TestTimeout:
     def test_timeout_marks_game_over(self):
         state = _make_state()
-        state = rules.apply_update_tick(state, 10_000)
+        rng = random.Random(42)
+        state = rules.apply_update_tick(state, 10_000, rng)
         assert state.public_state["phase"] == "timeout"
         assert state.is_game_over is True
         assert rules.check_game_over(state) is True
 
     def test_no_timeout_below_10s(self):
         state = _make_state()
-        state = rules.apply_update_tick(state, 9_999)
+        rng = random.Random(42)
+        state = rules.apply_update_tick(state, 9_999, rng)
         assert state.public_state["phase"] == "waiting_for_move"
         assert state.is_game_over is False
 
@@ -179,7 +187,8 @@ class TestPrepareState:
 class TestUpdateTickInit:
     def test_empty_state_gets_initialized(self):
         state = GameState(session_id="test")
-        state = rules.apply_update_tick(state, 0)
+        rng = random.Random(42)
+        state = rules.apply_update_tick(state, 0, rng)
         assert state.public_state["phase"] == "waiting_for_move"
         assert state.public_state["round"] == 1
 
@@ -235,7 +244,8 @@ class TestStateUpdateIntegrity:
         state.private_state["p1"]["my_score"] = 2
         state.private_state["p2"]["my_score"] = 1
 
-        state = rules.apply_update_tick(state, 500)
+        rng = random.Random(42)
+        state = rules.apply_update_tick(state, 500, rng)
 
         assert state.private_state["p1"]["my_score"] == 2  # preserved
         assert state.private_state["p2"]["my_score"] == 1  # preserved

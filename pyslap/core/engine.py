@@ -1,3 +1,4 @@
+import random
 import time
 import uuid
 from typing import Any, Mapping
@@ -160,7 +161,6 @@ class PySlapEngine:
         lobby_id = None
         if custom_data and custom_data.get("create_lobby"):
             import string
-            import random
             # Generate a 6-letter uppercase ID (QOEMDU)
             letters = string.ascii_uppercase
             lobby_id = ''.join(random.choice(letters) for i in range(6))
@@ -183,7 +183,10 @@ class PySlapEngine:
         game_state.session_id = session_id
         game_state.last_update_timestamp = current_time
         game_state.phase_ack = {}
-        
+
+        # Initialize random seed from system entropy (only non-deterministic point)
+        game_state.random_seed = random.getrandbits(64)
+
         # Assign first sticky slot
         game_state.slots["slot_0"] = player.player_id
 
@@ -357,6 +360,9 @@ class PySlapEngine:
 
         # 4. Apply Updates
 
+        # Create deterministic RNG from saved seed
+        rng = random.Random(state.random_seed)
+
         # Track phase for version bumping
         original_phase = state.public_state.get("phase")
 
@@ -383,7 +389,7 @@ class PySlapEngine:
         # First, apply regular time-based updates (if any) and not gated
         if not skip_tick:
             delta_ms = int((current_time - state.last_update_timestamp) * 1000)
-            state = rules.apply_update_tick(state, delta_ms)
+            state = rules.apply_update_tick(state, delta_ms, rng)
             state.last_update_timestamp = current_time
 
         # Second, apply valid player actions
@@ -396,11 +402,11 @@ class PySlapEngine:
                 timestamp=raw_act["timestamp"],
                 nonce=raw_act.get("nonce", 0)
             )
-            
+
             # Check nonce before applying
             if self.validator.validate_action_nonce(state, action.player_id, action.nonce):
                 if rules.validate_action(action, state):
-                    state = rules.apply_action(action, state)
+                    state = rules.apply_action(action, state, rng)
                     # Update local state nonce to prevent replays
                     state.last_nonces[action.player_id] = action.nonce
 
@@ -435,6 +441,8 @@ class PySlapEngine:
         # 6. Save State and Reschedule
         # Only save if the phase changed (prevents overwriting concurrent phase_ack updates)
         if not skip_tick or new_phase != original_phase:
+            # Advance seed for next execution to prevent replay of random sequences
+            state.random_seed = rng.randint(0, 2**63 - 1)
             state_data = asdict(state)
             state_data["id"] = session_id
             self.db.update("states", session_id, state_data)

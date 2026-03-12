@@ -3,6 +3,7 @@ Rock Paper Scissors - GameRules implementation for the pyslap backend.
 Best-of-three between a player and a computer with random moves.
 """
 
+import random
 from typing import Any
 
 from pyslap.core.game_rules import GameRules
@@ -126,14 +127,13 @@ class RpsGameRules(GameRules):
         choice = action.payload.get("choice", "").upper()
         return choice in VALID_MOVES
 
-    def apply_action(self, action: Action, state: GameState) -> GameState:
+    def apply_action(self, action: Action, state: GameState, rng: random.Random) -> GameState:
         choice = action.payload["choice"].upper()
         state.private_state[action.player_id]["choice"] = choice
 
         if len(state.private_state) < 2:
             return state
 
-        import random
         ps = state.public_state
         use_bot = ps.get("use_bot", False)
 
@@ -142,7 +142,7 @@ class RpsGameRules(GameRules):
             # Check if the human has a move
             human_id = [p for p in state.private_state if p != "computer"][0]
             if state.private_state[human_id].get("choice") in VALID_MOVES:
-                state.private_state["computer"]["choice"] = random.choice(list(VALID_MOVES))
+                state.private_state["computer"]["choice"] = rng.choice(list(VALID_MOVES))
 
         choices = []
         for player_id in state.private_state:
@@ -204,7 +204,7 @@ class RpsGameRules(GameRules):
 
         return state
 
-    def apply_update_tick(self, state: GameState, delta_ms: int) -> GameState:
+    def apply_update_tick(self, state: GameState, delta_ms: int, rng: random.Random) -> GameState:
         ps = state.public_state
 
         # Initialise public_state on very first tick (empty state)

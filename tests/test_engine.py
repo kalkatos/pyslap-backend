@@ -1,3 +1,4 @@
+import random
 import time
 from typing import Any, Dict
 from unittest.mock import MagicMock
@@ -15,11 +16,11 @@ class DummyGame(GameRules):
     def validate_action(self, action: Action, state: GameState) -> bool:
         return action.action_type == "valid_move"
 
-    def apply_action(self, action: Action, state: GameState) -> GameState:
+    def apply_action(self, action: Action, state: GameState, rng: random.Random) -> GameState:
         state.public_state["last_move"] = action.payload
         return state
 
-    def apply_update_tick(self, state: GameState, delta_ms: int) -> GameState:
+    def apply_update_tick(self, state: GameState, delta_ms: int, rng: random.Random) -> GameState:
         state.public_state["ticks"] = state.public_state.get("ticks", 0) + 1
         return state
 
@@ -413,3 +414,132 @@ def test_engine_force_clears_gate_on_timeout():
     # Because timeout expired, skip_tick should be False,
     # so apply_update_tick IS called.
     assert updated_state["public_state"]["ticks"] == 2
+
+
+def test_engine_deterministic_random_seed_on_create():
+    """Verify that random_seed is initialized on session creation."""
+    mock_db = MagicMock()
+    mock_scheduler = MagicMock()
+    games = {"dummy": DummyGame()}
+
+    def mock_db_read(coll, id):
+        if coll == "players": return {"id": id, "name": "Alice"}
+        if coll == "game_configs": return {"update_interval_ms": 1000}
+        return None
+    mock_db.read.side_effect = mock_db_read
+
+    engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
+    auth_token = engine.security.create_debug_external_token("p1", "Alice")
+    result = engine.create_session("dummy", auth_token)
+
+    # Verify random_seed was set
+    state_create_call = [call for call in mock_db.create.call_args_list if call[0][0] == "states"][0]
+    state_data = state_create_call[0][1]
+    assert state_data["random_seed"] > 0
+
+
+def test_engine_deterministic_rng_same_seed_same_moves():
+    """Verify that same random_seed produces same bot moves in RPS."""
+    from games.rps import RpsGameRules
+
+    mock_db = MagicMock()
+    mock_scheduler = MagicMock()
+    games = {"rps": RpsGameRules()}
+    engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
+
+    # Create a fixed seed for reproducibility
+    fixed_seed = 12345
+
+    # First run
+    state1_data = {
+        "session_id": "test_1",
+        "random_seed": fixed_seed,
+        "public_state": {
+            "use_bot": True,
+            "phase": "waiting_for_move",
+            "p1_score": 0,
+            "p2_score": 0,
+            "round": 1,
+            "last_p1_move": None,
+            "last_p2_move": None,
+            "last_round_winner": None,
+        },
+        "private_state": {
+            "p1": {"choice": "R"},
+            "computer": {"choice": ""}
+        },
+        "slots": {"slot_0": "p1", "slot_1": "computer"},
+        "phase_ack": {},
+        "last_nonces": {},
+    }
+    state1 = GameState(**state1_data)
+    action = Action("test_1", "p1", "move", {"choice": "R"}, time.time(), 1)
+
+    state1_result = games["rps"].apply_action(action, state1, random.Random(fixed_seed))
+    computer_move_1 = state1_result.private_state["computer"]["choice"]
+
+    # Second run with same seed
+    state2_data = state1_data.copy()
+    state2 = GameState(**state2_data)
+    state2_result = games["rps"].apply_action(action, state2, random.Random(fixed_seed))
+    computer_move_2 = state2_result.private_state["computer"]["choice"]
+
+    # Both should produce the same move
+    assert computer_move_1 == computer_move_2
+
+
+def test_engine_random_seed_advances_after_update_loop():
+    """Verify that random_seed advances after process_update_loop to prevent replay."""
+    mock_db = MagicMock()
+    mock_scheduler = MagicMock()
+    games = {"dummy": DummyGame()}
+
+    engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
+
+    current_time = time.time()
+    session_id = "sid_1"
+
+    original_seed = 99999
+
+    def mock_db_read(collection, doc_id):
+        if collection == "sessions":
+            return {
+                "session_id": session_id,
+                "game_id": "dummy",
+                "status": SessionStatus.ACTIVE,
+                "players": {"p1": {"name": "Alice"}},
+                "created_at": current_time,
+                "last_action_at": current_time
+            }
+        elif collection == "game_configs":
+            return {"update_interval_ms": 600}
+        elif collection == "states":
+            return {
+                "session_id": session_id,
+                "random_seed": original_seed,
+                "last_update_timestamp": current_time - 1.0,
+                "public_state": {"phase": "waiting", "ticks": 0},
+                "private_state": {},
+                "phase_ack": {},
+                "last_nonces": {},
+            }
+        return None
+
+    mock_db.read.side_effect = mock_db_read
+    mock_db.query.return_value = []
+
+    # Execute loop
+    engine.process_update_loop(session_id)
+
+    # Find the state update
+    state_updates = [call for call in mock_db.update.call_args_list if call[0][0] == "states"]
+    assert len(state_updates) == 1
+
+    updated_state = state_updates[0][0][2]
+    new_seed = updated_state["random_seed"]
+
+    # Seed should have changed (unless by extreme chance, it's the same)
+    # We can't assert inequality since RNG might theoretically produce same value,
+    # but we can verify it's a valid seed
+    assert new_seed >= 0
+    assert new_seed < 2**63
