@@ -204,6 +204,9 @@ class PySlapEngine:
 
         return {"session_id": session_id, "token": player.token, "state": client_state, "lobby_id": lobby_id}
 
+    # Framework-reserved action types handled natively by the engine.
+    FRAMEWORK_ACTIONS = frozenset({"ack"})
+
     def register_action(
         self,
         session_id: str,
@@ -215,6 +218,8 @@ class PySlapEngine:
     ) -> bool:
         """
         Registers an action for the next update loop.
+        Framework actions (e.g. "ack") are handled immediately by the engine
+        and never forwarded to game rules.
         """
         if not self.security.validate_request_token(session_id, player_id, token):
             return False
@@ -235,6 +240,10 @@ class PySlapEngine:
         if not self.validator.validate_action_rate(session, player_id, current_time):
             return False
 
+        # --- Native framework action: ack ---
+        if action_type == "ack":
+            return self._handle_ack(session_id, session, player_id, current_time)
+
         action = Action(
             session_id=session_id,
             player_id=player_id,
@@ -252,6 +261,51 @@ class PySlapEngine:
         session_data = asdict(session)
         session_data["id"] = session_id
         self.db.update("sessions", session_id, session_data)
+
+        return True
+
+    def _handle_ack(
+        self,
+        session_id: str,
+        session: Session,
+        player_id: str,
+        current_time: float,
+    ) -> bool:
+        """
+        Handles the native 'ack' framework action.
+        Marks the player as having acknowledged the current gated phase.
+        Takes effect immediately (no queuing) so the gate can clear on the next tick.
+        """
+        rules = self.games.get(session.game_id)
+        if not rules:
+            return False
+
+        gated_phases = rules.get_phase_gates()
+        if not gated_phases:
+            return False  # Game has no gated phases
+
+        state_data = self.db.read("states", session_id)
+        if not state_data:
+            return False
+
+        state_data.pop("id", None)
+        state = GameState(**state_data)
+
+        current_phase = state.public_state.get("phase")
+        if current_phase not in gated_phases:
+            return False  # Not currently in a gated phase
+
+        if player_id not in state.phase_ack:
+            return False  # Player not part of the ack set
+
+        if state.phase_ack[player_id]:
+            return True  # Already acked, idempotent success
+
+        state.phase_ack[player_id] = True
+
+        state_data = asdict(state)
+        state_data["id"] = session_id
+        self.db.update("states", session_id, state_data)
 
         return True
 

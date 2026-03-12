@@ -63,7 +63,7 @@ Features already done are marked with ✅DONE
 *   **Description**: Overwriting the entire `private_state` for a player erases other persistent data like scores.
 *   **Definitive Fix**: Implement a protected state mutation interface in the Engine that enforces partial updates to `private_state` and `public_state`, preventing game logic from accidentally nullifying or overwriting existing persistent data like scores. (update rps.py accordingly)
 
-### 9. Native Gated Transitions
+### ✅DONE 9. Native Gated Transitions
 *   **Description**: Gated phases can block game progress if players don't acknowledge the transition.
 *   **Definitive Fix**: Build the `ack` (acknowledgment) mechanism directly into the `PySlapEngine` as a core framework action. This allows any game to define gated phases that the Engine manages automatically, without requiring custom "ack" logic in every game. (update rps.py accordingly)
 

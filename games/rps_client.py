@@ -243,7 +243,7 @@ async def run_client () -> None:
 
                 case "round_complete":
                     move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
-                    
+
                     private_state = state.get("private_state", {})
                     my_raw = private_state.get("my_choice")
                     opp_raw = private_state.get("opponent_choice")
@@ -254,25 +254,26 @@ async def run_client () -> None:
                     print(f"Opponent move: {opp_move}")
 
                     winner = ps.get("last_round_winner", "")
-                    
-                    # Logic depends on whether my_score matched winner id. 
-                    # If this player is p1, and p1 won, it's a win for them.
-                    # A better way is matching the choices. 
-                    # But since the game logic already computes score, we'll check if my_score increased.
-                    # Or we just print out the new scores directly:
                     my_score = private_state.get("my_score", 0)
                     opp_score = private_state.get("opponent_score", 0)
 
-                    # Determine round win from score difference if we just look at winner 
-                    # Let's derive it directly from backend: we know winner is 'p1' or 'p2'.
-                    # Or we can see who beats who to print the correct message:
                     if winner == "draw":
                         print(">> It's a draw! Play again.")
                     elif winner in ("p1", "p2"):
-                        # If backend gave us "p1_score", we know our own my_score mapped to it.
                         print(f">> Round complete!")
 
                     print(f"\nScore: You {my_score} - {opp_score} Opponent")
+
+                    # Send explicit ack so the engine can clear the gated phase
+                    await _send_action(
+                        client,
+                        session_id=session_id,
+                        player_id=player_id,
+                        token=token,
+                        action_type="ack",
+                        payload={},
+                        nonce=0,
+                    )
 
                 case "game_over":
                     move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}

@@ -85,9 +85,10 @@ def test_local_entrypoint_flow(setup_engine):
     assert len(action_data) == 1
     assert action_data[0]["action_type"] == "move"
 
-def test_local_entrypoint_registers_ack(setup_engine):
+def test_local_entrypoint_registers_ack_via_action(setup_engine):
+    """Ack is now a native engine action sent via send_action, not implicit on get_state."""
     entrypoint, engine, db = setup_engine
-    
+
     player_id = "player1"
     player_name = "Alex"
     db.create("players", {"id": player_id, "name": player_name, "token": "secret_token"})
@@ -95,19 +96,29 @@ def test_local_entrypoint_registers_ack(setup_engine):
     session_info = engine.create_session("rps", auth_token)
     session_id = session_info["session_id"]
     token = session_info["token"]
-    
+
     # Manually transition state to a gated phase ("round_complete" for RPS)
+    # and set session to ACTIVE so ack is accepted
     state_data = db.read("states", session_id)
     state_data["public_state"]["phase"] = "round_complete"
     state_data["phase_ack"] = {player_id: False}
     db.update("states", session_id, state_data)
-    
-    # 1. Fetch state - this should trigger the ack registration
+
+    session_data = db.read("sessions", session_id)
+    session_data["status"] = "active"
+    db.update("sessions", session_id, session_data)
+
+    # 1. Fetch state — should NOT auto-ack anymore
     state = entrypoint.get_state(session_id, player_id, token)
-    
-    # 2. Verify state returned has the phase
     assert state.public_state["phase"] == "round_complete"
-    
+
+    pre_ack_state = db.read("states", session_id)
+    assert pre_ack_state["phase_ack"][player_id] is False  # Still un-acked
+
+    # 2. Send explicit ack action
+    result = entrypoint.send_action(session_id, player_id, token, "ack", {})
+    assert result is True
+
     # 3. Verify DB was updated with ack
     updated_state_data = db.read("states", session_id)
     assert updated_state_data["phase_ack"][player_id] is True

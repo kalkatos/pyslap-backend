@@ -215,6 +215,153 @@ def test_engine_skips_tick_on_gated_phase():
     state_updates = [call for call in mock_db.update.call_args_list if call[0][0] == "states"]
     assert len(state_updates) == 0
 
+def test_engine_ack_action_updates_phase_ack():
+    mock_db = MagicMock()
+    mock_scheduler = MagicMock()
+
+    class GatedGame(DummyGame):
+        def get_phase_gates(self) -> set[str]:
+            return {"gated"}
+
+    games = {"gated_game": GatedGame()}
+    engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
+
+    current_time = time.time()
+    session_id = "sid_1"
+    valid_token = engine.security.generate_session_token("p1", session_id)
+
+    def mock_db_read(collection, doc_id):
+        if collection == "sessions":
+            return {
+                "session_id": session_id,
+                "game_id": "gated_game",
+                "status": SessionStatus.ACTIVE,
+                "players": {"p1": {"player_id": "p1", "name": "Alice", "token": valid_token}, "p2": {"player_id": "p2", "name": "Bob"}},
+                "created_at": current_time,
+                "last_action_at": current_time
+            }
+        elif collection == "states":
+            return {
+                "session_id": session_id,
+                "last_update_timestamp": current_time,
+                "public_state": {"phase": "gated", "ticks": 1},
+                "private_state": {},
+                "phase_ack": {"p1": False, "p2": False},
+                "phase_ack_since": current_time
+            }
+        return None
+
+    mock_db.read.side_effect = mock_db_read
+    mock_db.query.return_value = []
+
+    # Send ack action — should update phase_ack directly
+    result = engine.register_action(session_id, "p1", valid_token, "ack", {})
+    assert result is True
+
+    # Verify state was saved with p1 acked
+    state_updates = [call for call in mock_db.update.call_args_list if call[0][0] == "states"]
+    assert len(state_updates) == 1
+    updated_state = state_updates[0][0][2]
+    assert updated_state["phase_ack"]["p1"] is True
+    assert updated_state["phase_ack"]["p2"] is False
+
+    # Verify no action was logged to DB (ack is not queued)
+    action_creates = [call for call in mock_db.create.call_args_list if call[0][0] == "actions"]
+    assert len(action_creates) == 0
+
+
+def test_engine_ack_action_idempotent():
+    mock_db = MagicMock()
+    mock_scheduler = MagicMock()
+
+    class GatedGame(DummyGame):
+        def get_phase_gates(self) -> set[str]:
+            return {"gated"}
+
+    games = {"gated_game": GatedGame()}
+    engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
+
+    current_time = time.time()
+    session_id = "sid_1"
+    valid_token = engine.security.generate_session_token("p1", session_id)
+
+    def mock_db_read(collection, doc_id):
+        if collection == "sessions":
+            return {
+                "session_id": session_id,
+                "game_id": "gated_game",
+                "status": SessionStatus.ACTIVE,
+                "players": {"p1": {"player_id": "p1", "name": "Alice"}},
+                "created_at": current_time,
+                "last_action_at": current_time
+            }
+        elif collection == "states":
+            return {
+                "session_id": session_id,
+                "last_update_timestamp": current_time,
+                "public_state": {"phase": "gated"},
+                "private_state": {},
+                "phase_ack": {"p1": True},  # Already acked
+                "phase_ack_since": current_time
+            }
+        return None
+
+    mock_db.read.side_effect = mock_db_read
+    mock_db.query.return_value = []
+
+    # Ack again — should succeed (idempotent) but NOT write to DB
+    result = engine.register_action(session_id, "p1", valid_token, "ack", {})
+    assert result is True
+
+    # No state update needed since already acked
+    state_updates = [call for call in mock_db.update.call_args_list if call[0][0] == "states"]
+    assert len(state_updates) == 0
+
+
+def test_engine_ack_rejected_outside_gated_phase():
+    mock_db = MagicMock()
+    mock_scheduler = MagicMock()
+
+    class GatedGame(DummyGame):
+        def get_phase_gates(self) -> set[str]:
+            return {"gated"}
+
+    games = {"gated_game": GatedGame()}
+    engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
+
+    current_time = time.time()
+    session_id = "sid_1"
+    valid_token = engine.security.generate_session_token("p1", session_id)
+
+    def mock_db_read(collection, doc_id):
+        if collection == "sessions":
+            return {
+                "session_id": session_id,
+                "game_id": "gated_game",
+                "status": SessionStatus.ACTIVE,
+                "players": {"p1": {"player_id": "p1", "name": "Alice"}},
+                "created_at": current_time,
+                "last_action_at": current_time
+            }
+        elif collection == "states":
+            return {
+                "session_id": session_id,
+                "last_update_timestamp": current_time,
+                "public_state": {"phase": "waiting"},  # NOT a gated phase
+                "private_state": {},
+                "phase_ack": {"p1": False},
+                "phase_ack_since": current_time
+            }
+        return None
+
+    mock_db.read.side_effect = mock_db_read
+    mock_db.query.return_value = []
+
+    # Ack should be rejected — not in a gated phase
+    result = engine.register_action(session_id, "p1", valid_token, "ack", {})
+    assert result is False
+
+
 def test_engine_force_clears_gate_on_timeout():
     mock_db = MagicMock()
     mock_scheduler = MagicMock()
