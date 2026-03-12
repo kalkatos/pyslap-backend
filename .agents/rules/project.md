@@ -2,6 +2,8 @@
 trigger: always_on
 ---
 
+## About
+
 PYSLAP is a python multiplayer game backend framework. It works on the cloud with a serverless architecture and has the following features:
 
 - It does not rely on websockets for real-time communication. Instead, it uses a polling mechanism to send updates to the clients.
