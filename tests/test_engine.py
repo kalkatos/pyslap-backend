@@ -210,11 +210,17 @@ def test_engine_skips_tick_on_gated_phase():
     
     # Execute loop
     engine.process_update_loop(session_id)
-    
+
     # Verify State Update
-    # Because skip_tick was True and no actions were applied, the state shouldn't even be resaved!
+    # Even though tick was skipped, state is still saved to persist
+    # last_update_timestamp (prevents delta spikes when the gate clears).
     state_updates = [call for call in mock_db.update.call_args_list if call[0][0] == "states"]
-    assert len(state_updates) == 0
+    assert len(state_updates) == 1
+    updated_state = state_updates[0][0][2]
+    # Tick was skipped so ticks count should NOT have incremented
+    assert updated_state["public_state"]["ticks"] == 1
+    # But last_update_timestamp should be advanced
+    assert updated_state["last_update_timestamp"] >= current_time
 
 def test_engine_ack_action_updates_phase_ack():
     mock_db = MagicMock()
@@ -543,3 +549,155 @@ def test_engine_random_seed_advances_after_update_loop():
     # but we can verify it's a valid seed
     assert new_seed >= 0
     assert new_seed < 2**63
+
+
+def test_engine_delta_ms_first_tick_is_zero():
+    """First tick after creation should have delta_ms=0 (last_update_timestamp is 0)."""
+    mock_db = MagicMock()
+    mock_scheduler = MagicMock()
+
+    class DeltaCapture(DummyGame):
+        captured_delta = None
+        def apply_update_tick(self, state, delta_ms, rng):
+            DeltaCapture.captured_delta = delta_ms
+            return super().apply_update_tick(state, delta_ms, rng)
+
+    games = {"delta_game": DeltaCapture()}
+    engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
+
+    current_time = time.time()
+    session_id = "sid_delta_first"
+
+    def mock_db_read(collection, doc_id):
+        if collection == "sessions":
+            return {
+                "session_id": session_id,
+                "game_id": "delta_game",
+                "status": SessionStatus.ACTIVE,
+                "players": {"p1": {"name": "Alice"}},
+                "created_at": current_time,
+                "last_action_at": current_time
+            }
+        elif collection == "game_configs":
+            return {"update_interval_ms": 500}
+        elif collection == "states":
+            return {
+                "session_id": session_id,
+                "last_update_timestamp": 0.0,  # Not yet set (first tick)
+                "public_state": {"phase": "waiting", "ticks": 0},
+                "private_state": {},
+            }
+        return None
+
+    mock_db.read.side_effect = mock_db_read
+    mock_db.query.return_value = []
+
+    engine.process_update_loop(session_id)
+    assert DeltaCapture.captured_delta == 0
+
+
+def test_engine_delta_ms_clamped_on_spike():
+    """delta_ms must be clamped to prevent cold-start or scheduling-delay spikes."""
+    mock_db = MagicMock()
+    mock_scheduler = MagicMock()
+
+    class DeltaCapture(DummyGame):
+        captured_delta = None
+        def apply_update_tick(self, state, delta_ms, rng):
+            DeltaCapture.captured_delta = delta_ms
+            return super().apply_update_tick(state, delta_ms, rng)
+
+    games = {"delta_game": DeltaCapture()}
+    engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
+
+    current_time = time.time()
+    session_id = "sid_delta_spike"
+    update_interval_ms = 500
+
+    def mock_db_read(collection, doc_id):
+        if collection == "sessions":
+            return {
+                "session_id": session_id,
+                "game_id": "delta_game",
+                "status": SessionStatus.ACTIVE,
+                "players": {"p1": {"name": "Alice"}},
+                "created_at": current_time,
+                "last_action_at": current_time
+            }
+        elif collection == "game_configs":
+            return {"update_interval_ms": update_interval_ms}
+        elif collection == "states":
+            return {
+                "session_id": session_id,
+                # Simulate a 30-second cold-start delay
+                "last_update_timestamp": current_time - 30.0,
+                "public_state": {"phase": "waiting", "ticks": 0},
+                "private_state": {},
+            }
+        return None
+
+    mock_db.read.side_effect = mock_db_read
+    mock_db.query.return_value = []
+
+    engine.process_update_loop(session_id)
+
+    # Max clamp = max(500 * 3, 2000) = 2000
+    assert DeltaCapture.captured_delta <= 2000
+    assert DeltaCapture.captured_delta > 0
+
+
+def test_engine_delta_ms_no_spike_after_gated_phase():
+    """After a gated phase clears, delta_ms should reflect only the last interval, not accumulated gate time."""
+    mock_db = MagicMock()
+    mock_scheduler = MagicMock()
+
+    class DeltaCapture(DummyGame):
+        captured_delta = None
+        def get_phase_gates(self):
+            return {"gated"}
+        def apply_update_tick(self, state, delta_ms, rng):
+            DeltaCapture.captured_delta = delta_ms
+            return super().apply_update_tick(state, delta_ms, rng)
+
+    games = {"delta_game": DeltaCapture()}
+    engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
+
+    current_time = time.time()
+    session_id = "sid_delta_gate"
+
+    # Step 1: Simulate a skipped tick during a gated phase
+    call_count = [0]
+    def mock_db_read_gated(collection, doc_id):
+        if collection == "sessions":
+            return {
+                "session_id": session_id,
+                "game_id": "delta_game",
+                "status": SessionStatus.ACTIVE,
+                "players": {"p1": {"name": "Alice"}, "p2": {"name": "Bob"}},
+                "created_at": current_time,
+                "last_action_at": current_time
+            }
+        elif collection == "game_configs":
+            return {"update_interval_ms": 500, "phase_ack_timeout_sec": 60}
+        elif collection == "states":
+            return {
+                "session_id": session_id,
+                "last_update_timestamp": current_time - 1.0,
+                "public_state": {"phase": "gated", "ticks": 5},
+                "private_state": {},
+                "phase_ack": {"p1": False, "p2": False},
+                "phase_ack_since": current_time - 1.0,
+            }
+        return None
+
+    mock_db.read.side_effect = mock_db_read_gated
+    mock_db.query.return_value = []
+
+    # Run tick during gated phase (will be skipped)
+    engine.process_update_loop(session_id)
+
+    # Tick was skipped, but last_update_timestamp should have been saved
+    state_updates = [call for call in mock_db.update.call_args_list if call[0][0] == "states"]
+    assert len(state_updates) == 1
+    saved_timestamp = state_updates[0][0][2]["last_update_timestamp"]
+    assert saved_timestamp >= current_time  # Timestamp was advanced despite skip

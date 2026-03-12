@@ -388,9 +388,23 @@ class PySlapEngine:
 
         # First, apply regular time-based updates (if any) and not gated
         if not skip_tick:
-            delta_ms = int((current_time - state.last_update_timestamp) * 1000)
+            # Calculate real elapsed time based on database-stored timestamps
+            if state.last_update_timestamp > 0:
+                raw_delta_ms = int((current_time - state.last_update_timestamp) * 1000)
+            else:
+                # First tick after creation: no meaningful game time has elapsed
+                raw_delta_ms = 0
+
+            # Clamp to prevent spikes from serverless cold starts or scheduling delays.
+            # Uses 3x the configured interval as ceiling (minimum cap of 2000ms).
+            max_delta = max(config.update_interval_ms * 3, 2000) if config.update_interval_ms > 0 else 2000
+            delta_ms = max(0, min(raw_delta_ms, max_delta))
+
             state = rules.apply_update_tick(state, delta_ms, rng)
-            state.last_update_timestamp = current_time
+
+        # Always advance the timestamp — even during skipped (gated) ticks —
+        # so that delta_ms doesn't spike when the gate clears.
+        state.last_update_timestamp = current_time
 
         # Second, apply valid player actions
         for raw_act in pending_actions:
@@ -439,13 +453,12 @@ class PySlapEngine:
             return  # Exit loop
 
         # 6. Save State and Reschedule
-        # Only save if the phase changed (prevents overwriting concurrent phase_ack updates)
-        if not skip_tick or new_phase != original_phase:
-            # Advance seed for next execution to prevent replay of random sequences
-            state.random_seed = rng.randint(0, 2**63 - 1)
-            state_data = asdict(state)
-            state_data["id"] = session_id
-            self.db.update("states", session_id, state_data)
+        # Always save to persist last_update_timestamp (prevents delta spikes
+        # after gated phases) and the advanced random seed.
+        state.random_seed = rng.randint(0, 2**63 - 1)
+        state_data = asdict(state)
+        state_data["id"] = session_id
+        self.db.update("states", session_id, state_data)
 
         # Enforce serverless minimum interval requirement (>=500ms)
         delay_ms = max(config.update_interval_ms, self.MINIMUM_UPDATE_INTERVAL_MS)
