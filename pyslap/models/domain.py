@@ -62,6 +62,17 @@ class GameState:
     last_nonces: dict[str, int] = field(default_factory=dict) # player_id -> last accepted nonce
     last_update_timestamp: float = 0.0
 
+    def update_public_state(self, updates: dict) -> None:
+        """Merge updates into public_state. Only specified keys are changed; others are preserved."""
+        self.public_state.update(updates)
+
+    def update_private_state(self, player_id: str, updates: dict) -> None:
+        """Merge updates into a player's private state. Only specified keys are changed; others are preserved.
+        If the player has no entry yet, it is created from the updates."""
+        if player_id not in self.private_state:
+            self.private_state[player_id] = {}
+        self.private_state[player_id].update(updates)
+
     def to_player_state(self, player_id: str) -> 'GameState':
         new_state: 'GameState' = GameState(**self.__dict__)
         new_state.private_state = self.private_state.get(player_id, {})

@@ -182,3 +182,60 @@ class TestUpdateTickInit:
         state = rules.apply_update_tick(state, 0)
         assert state.public_state["phase"] == "waiting_for_move"
         assert state.public_state["round"] == 1
+
+
+# ------------------------------------------- state update integrity (#8)
+class TestStateUpdateIntegrity:
+    def test_update_private_state_preserves_existing_keys(self):
+        state = GameState(session_id="test", private_state={"p1": {"score": 5, "choice": ""}})
+        state.update_private_state("p1", {"choice": "R"})
+        assert state.private_state["p1"]["choice"] == "R"
+        assert state.private_state["p1"]["score"] == 5  # preserved
+
+    def test_update_private_state_creates_entry_for_new_player(self):
+        state = GameState(session_id="test", private_state={})
+        state.update_private_state("p1", {"choice": "", "my_score": 0})
+        assert state.private_state["p1"] == {"choice": "", "my_score": 0}
+
+    def test_update_public_state_preserves_existing_keys(self):
+        state = GameState(session_id="test", public_state={"phase": "waiting_for_move", "round": 3})
+        state.update_public_state({"phase": "round_complete"})
+        assert state.public_state["phase"] == "round_complete"
+        assert state.public_state["round"] == 3  # preserved
+
+    def test_setup_player_state_preserves_scores_on_rejoin(self):
+        """setup_player_state must not reset a player's accumulated score."""
+        state = _make_state()
+        state.private_state["p1"]["my_score"] = 3
+        state.private_state["p1"]["opponent_score"] = 1
+
+        from pyslap.models.domain import Player
+        player = Player(player_id="p1", name="Alice")
+        state = rules.setup_player_state(state, player)
+
+        assert state.private_state["p1"]["my_score"] == 3       # preserved
+        assert state.private_state["p1"]["opponent_score"] == 1  # preserved
+        assert state.private_state["p1"]["choice"] == ""         # reset
+
+    def test_setup_player_state_initializes_scores_for_new_player(self):
+        """setup_player_state must initialize scores to 0 when player has no existing state."""
+        state = _make_state(players=["p1"])
+        state.private_state.pop("p1", None)  # remove p1 entirely
+
+        from pyslap.models.domain import Player
+        player = Player(player_id="p1", name="Alice")
+        state = rules.setup_player_state(state, player)
+
+        assert state.private_state["p1"]["my_score"] == 0
+        assert state.private_state["p1"]["opponent_score"] == 0
+
+    def test_round_complete_tick_preserves_scores(self):
+        """apply_update_tick on round_complete must not erase scores."""
+        state = _make_state(phase="round_complete")
+        state.private_state["p1"]["my_score"] = 2
+        state.private_state["p2"]["my_score"] = 1
+
+        state = rules.apply_update_tick(state, 500)
+
+        assert state.private_state["p1"]["my_score"] == 2  # preserved
+        assert state.private_state["p2"]["my_score"] == 1  # preserved

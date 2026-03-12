@@ -101,19 +101,21 @@ class RpsGameRules(GameRules):
         )
 
     def setup_player_state(self, state: GameState, player: Player) -> GameState:
-        state.private_state[player.player_id] = {
+        # Reset operational fields; preserve any existing persistent data (e.g. scores on rejoin)
+        state.update_private_state(player.player_id, {
             "choice": "",
             "my_choice": None,
             "opponent_choice": None,
-            "my_score": 0,
-            "opponent_score": 0,
-        }
+        })
+        # Initialize score fields only if not already present
+        player_private = state.private_state[player.player_id]
+        player_private.setdefault("my_score", 0)
+        player_private.setdefault("opponent_score", 0)
 
         # If we have reached the required number of players, start the game immediately
         if len(state.private_state) >= 2 and state.public_state.get("phase") == "waiting_for_players":
-            state.public_state["phase"] = "waiting_for_move"
-            state.public_state["round_start_ms"] = 0
-        
+            state.update_public_state({"phase": "waiting_for_move", "round_start_ms": 0})
+
         return state
 
     def validate_action(self, action: Action, state: GameState) -> bool:
@@ -172,15 +174,18 @@ class RpsGameRules(GameRules):
                 return state
             p1_id, p2_id = player_ids[0], player_ids[1]
 
-        state.private_state[p1_id]["my_choice"] = choices[0]
-        state.private_state[p1_id]["opponent_choice"] = choices[1]
-        state.private_state[p1_id]["my_score"] = ps["p1_score"]
-        state.private_state[p1_id]["opponent_score"] = ps["p2_score"]
-        
-        state.private_state[p2_id]["my_choice"] = choices[1]
-        state.private_state[p2_id]["opponent_choice"] = choices[0]
-        state.private_state[p2_id]["my_score"] = ps["p2_score"]
-        state.private_state[p2_id]["opponent_score"] = ps["p1_score"]
+        state.update_private_state(p1_id, {
+            "my_choice": choices[0],
+            "opponent_choice": choices[1],
+            "my_score": ps["p1_score"],
+            "opponent_score": ps["p2_score"],
+        })
+        state.update_private_state(p2_id, {
+            "my_choice": choices[1],
+            "opponent_choice": choices[0],
+            "my_score": ps["p2_score"],
+            "opponent_score": ps["p1_score"],
+        })
 
         # Check if someone reached 2 wins → game over
         if ps["p1_score"] >= 2:
@@ -218,15 +223,15 @@ class RpsGameRules(GameRules):
 
         # After a round_complete, transition back to waiting
         if phase == "round_complete":
-            ps["phase"] = "waiting_for_move"
-            ps["round_start_ms"] = 0
-            ps["last_p1_move"] = None
-            ps["last_p2_move"] = None
-            ps["last_round_winner"] = None
+            state.update_public_state({
+                "phase": "waiting_for_move",
+                "round_start_ms": 0,
+                "last_p1_move": None,
+                "last_p2_move": None,
+                "last_round_winner": None,
+            })
             for p in state.private_state:
-                state.private_state[p]["choice"] = ""
-                state.private_state[p]["my_choice"] = None
-                state.private_state[p]["opponent_choice"] = None
+                state.update_private_state(p, {"choice": "", "my_choice": None, "opponent_choice": None})
             return state
 
         # Timeout check while waiting for a move
