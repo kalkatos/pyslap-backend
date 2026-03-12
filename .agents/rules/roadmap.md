@@ -55,11 +55,11 @@ Features already done are marked with ✅DONE
 *   **Description**: Sessions can get stuck in "waiting_for_players" if the joiner doesn't trigger a tick.
 *   **Definitive Fix**: The `PySlapEngine` must automatically trigger a state update and version bump as soon as a session transitions from `MATCHMAKING` to `ACTIVE`, ensuring the game starts immediately without waiting for the next periodic tick. (update rps.py accordingly)
 
-### 7. Sticky Slot Assignment
+### ✅DONE 7. Sticky Slot Assignment
 *   **Description**: Relying on dictionary key order or dynamic list indices is brittle, as player positions shift if someone leaves or disconnects.
 *   **Definitive Fix**: The framework must implement a **Sticky Slot** system. When a player joins, they are assigned a permanent slot identifier (e.g., `slot_0`, `slot_1`) stored in a dedicated mapping (e.g., `GameState.slots`) and persisted in the DB. This assignment is immutable for the duration of the session; if a player leaves, their slot remains reserved or empty, ensuring other players' references never shift. (update rps.py accordingly)
 
-### 8. State Update Integrity
+### ✅DONE 8. State Update Integrity
 *   **Description**: Overwriting the entire `private_state` for a player erases other persistent data like scores.
 *   **Definitive Fix**: Implement a protected state mutation interface in the Engine that enforces partial updates to `private_state` and `public_state`, preventing game logic from accidentally nullifying or overwriting existing persistent data like scores. (update rps.py accordingly)
 
