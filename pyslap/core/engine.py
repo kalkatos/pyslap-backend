@@ -28,7 +28,7 @@ class PySlapEngine:
     MINIMUM_UPDATE_INTERVAL_MS = 100
     DEFAULT_LOOP_LEASE_SEC = 30.0
 
-    def __init__(
+    def __init__ (
         self,
         db: DatabaseInterface,
         scheduler: SchedulerInterface,
@@ -52,7 +52,7 @@ class PySlapEngine:
         self.scheduler.set_callback(self.process_update_loop)
         self._cleanup_old_records()
 
-    def _cleanup_old_records(self, max_age_sec: int = 5 * 3600) -> None:
+    def _cleanup_old_records (self, max_age_sec: int = 5 * 3600) -> None:
         """Deletes sessions older than max_age_sec (default 5 hours) and their related data."""
         cutoff = time.time() - max_age_sec
         old_sessions = [
@@ -72,7 +72,7 @@ class PySlapEngine:
             self.db.delete("states", session_id)
             self.db.delete("sessions", session_id)
 
-    def create_session(
+    def create_session (
         self, game_id: str, auth_token: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None
     ) -> dict[str, Any] | None:
         """
@@ -228,7 +228,7 @@ class PySlapEngine:
     # Framework-reserved action types handled natively by the engine.
     FRAMEWORK_ACTIONS = frozenset({"ack"})
 
-    def register_action(
+    def register_action (
         self,
         session_id: str,
         player_id: str,
@@ -285,7 +285,7 @@ class PySlapEngine:
 
         return True
 
-    def _handle_ack(
+    def _handle_ack (
         self,
         session_id: str,
         session: Session,
@@ -330,7 +330,7 @@ class PySlapEngine:
 
         return True
 
-    def _try_acquire_loop_lock(
+    def _try_acquire_loop_lock (
         self, session_id: str, holder_id: str, lease_sec: float = DEFAULT_LOOP_LEASE_SEC
     ) -> bool:
         """
@@ -373,7 +373,7 @@ class PySlapEngine:
         }
         return self.db.update("locks", lock_id, new_lock, expected_version=current_version)
 
-    def _release_loop_lock(self, session_id: str, holder_id: str) -> None:
+    def _release_loop_lock (self, session_id: str, holder_id: str) -> None:
         """
         Releases a previously acquired loop lock, but only if we still own it.
         """
@@ -382,7 +382,7 @@ class PySlapEngine:
         if existing and existing.get("holder_id") == holder_id:
             self.db.delete("locks", lock_id)
 
-    def process_update_loop(self, session_id: str) -> None:
+    def process_update_loop (self, session_id: str) -> None:
         """
         The polling loop executed periodically. Processes pending actions and game state.
         This must be independent of other runs (Serverless requirement).
@@ -401,7 +401,7 @@ class PySlapEngine:
         finally:
             self._release_loop_lock(session_id, holder_id)
 
-    def _execute_update_loop(self, session_id: str) -> None:
+    def _execute_update_loop (self, session_id: str) -> None:
         """Core update loop logic, called under distributed lock protection."""
         current_time = time.time()
 

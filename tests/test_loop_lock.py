@@ -12,34 +12,34 @@ from pyslap.models.domain import Action, GameState, SessionStatus, Player
 
 # --- Dummy Game Rules for Testing ---
 class DummyGame(GameRules):
-    def create_game_state(self, players: list[Player], custom_data: dict[str, Any]) -> GameState:
+    def create_game_state (self, players: list[Player], custom_data: dict[str, Any]) -> GameState:
         return GameState(session_id="", public_state={"phase": "waiting"}, private_state={})
 
-    def validate_action(self, action: Action, state: GameState) -> bool:
+    def validate_action (self, action: Action, state: GameState) -> bool:
         return True
 
-    def apply_action(self, action: Action, state: GameState, rng: random.Random) -> GameState:
+    def apply_action (self, action: Action, state: GameState, rng: random.Random) -> GameState:
         return state
 
-    def apply_update_tick(self, state: GameState, delta_ms: int, rng: random.Random) -> GameState:
+    def apply_update_tick (self, state: GameState, delta_ms: int, rng: random.Random) -> GameState:
         state.public_state["ticks"] = state.public_state.get("ticks", 0) + 1
         return state
 
-    def check_game_over(self, state: GameState) -> bool:
+    def check_game_over (self, state: GameState) -> bool:
         return False
 
-    def prepare_state(self, state: GameState, player_id: str, recent_actions: list) -> Dict[str, Any]:
+    def prepare_state (self, state: GameState, player_id: str, recent_actions: list) -> Dict[str, Any]:
         return {"public": state.public_state, "private": {}}
 
 
-def _make_mock_db(session_id="sid_1", game_id="dummy", current_time=None):
+def _make_mock_db (session_id="sid_1", game_id="dummy", current_time=None):
     """Creates a mock DB with lock-aware side effects for loop protection tests."""
     if current_time is None:
         current_time = time.time()
 
     locks = {}
 
-    def mock_read(coll, doc_id):
+    def mock_read (coll, doc_id):
         if coll == "locks":
             return locks.get(doc_id)
         if coll == "sessions":
@@ -63,12 +63,12 @@ def _make_mock_db(session_id="sid_1", game_id="dummy", current_time=None):
             }
         return None
 
-    def mock_create(coll, data):
+    def mock_create (coll, data):
         if coll == "locks":
             locks[data["id"]] = dict(data)
         return data.get("id", "mock_id")
 
-    def mock_update(coll, doc_id, data, expected_version=None):
+    def mock_update (coll, doc_id, data, expected_version=None):
         if coll == "locks":
             existing = locks.get(doc_id)
             if existing is None:
@@ -79,7 +79,7 @@ def _make_mock_db(session_id="sid_1", game_id="dummy", current_time=None):
             return True
         return True
 
-    def mock_delete(coll, doc_id):
+    def mock_delete (coll, doc_id):
         if coll == "locks":
             return locks.pop(doc_id, None) is not None
         return True
@@ -97,7 +97,7 @@ def _make_mock_db(session_id="sid_1", game_id="dummy", current_time=None):
 # --- Test Cases ---
 
 
-def test_loop_acquires_and_releases_lock():
+def test_loop_acquires_and_releases_lock ():
     """Verify the update loop creates a lock before processing and deletes it after."""
     mock_db, locks = _make_mock_db()
     mock_scheduler = MagicMock()
@@ -119,7 +119,7 @@ def test_loop_acquires_and_releases_lock():
     assert len(locks) == 0
 
 
-def test_loop_skipped_when_lock_held():
+def test_loop_skipped_when_lock_held ():
     """If another instance holds an active lock, the loop should skip entirely."""
     mock_db, locks = _make_mock_db()
     mock_scheduler = MagicMock()
@@ -148,7 +148,7 @@ def test_loop_skipped_when_lock_held():
     assert locks[lock_id]["holder_id"] == "other-instance-id"
 
 
-def test_expired_lock_can_be_taken_over():
+def test_expired_lock_can_be_taken_over ():
     """An expired lock should be reclaimable by a new instance via CAS."""
     mock_db, locks = _make_mock_db()
     mock_scheduler = MagicMock()
@@ -177,7 +177,7 @@ def test_expired_lock_can_be_taken_over():
     assert len(locks) == 0
 
 
-def test_expired_lock_cas_failure_skips_loop():
+def test_expired_lock_cas_failure_skips_loop ():
     """If CAS fails when taking over an expired lock (another instance beat us), skip."""
     mock_db, locks = _make_mock_db()
     mock_scheduler = MagicMock()
@@ -199,7 +199,7 @@ def test_expired_lock_cas_failure_skips_loop():
     # Override update to simulate CAS failure on locks (another instance won)
     original_update = mock_db.update.side_effect
 
-    def cas_failing_update(coll, doc_id, data, expected_version=None):
+    def cas_failing_update (coll, doc_id, data, expected_version=None):
         if coll == "locks":
             return False  # Simulate CAS failure
         return original_update(coll, doc_id, data, expected_version=expected_version)
@@ -213,7 +213,7 @@ def test_expired_lock_cas_failure_skips_loop():
     assert len(state_updates) == 0
 
 
-def test_lock_released_even_on_exception():
+def test_lock_released_even_on_exception ():
     """The lock must be released even if the update loop raises an exception."""
     mock_db, locks = _make_mock_db()
     mock_scheduler = MagicMock()
@@ -233,7 +233,7 @@ def test_lock_released_even_on_exception():
     assert len(locks) == 0
 
 
-def test_lock_version_increments_on_takeover():
+def test_lock_version_increments_on_takeover ():
     """When taking over an expired lock, the version must increment for CAS safety."""
     mock_db, locks = _make_mock_db()
     mock_scheduler = MagicMock()
@@ -256,7 +256,7 @@ def test_lock_version_increments_on_takeover():
     update_calls = []
     original_update = mock_db.update.side_effect
 
-    def tracking_update(coll, doc_id, data, expected_version=None):
+    def tracking_update (coll, doc_id, data, expected_version=None):
         if coll == "locks":
             update_calls.append({
                 "data": dict(data),
@@ -275,7 +275,7 @@ def test_lock_version_increments_on_takeover():
     assert lock_update["data"]["version"] == 4
 
 
-def test_concurrent_loops_only_one_processes():
+def test_concurrent_loops_only_one_processes ():
     """Simulate concurrent update loop invocations — only one should process."""
     from local.sql_database import SQLiteDatabase
     import tempfile
@@ -331,7 +331,7 @@ def test_concurrent_loops_only_one_processes():
 
         original_execute = engine._execute_update_loop
 
-        def counting_execute(sid):
+        def counting_execute (sid):
             with results_lock:
                 results["processed"] += 1
             # Add a small delay to increase the window for contention
