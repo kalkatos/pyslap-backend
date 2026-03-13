@@ -67,7 +67,7 @@ Features already done are marked with ✅DONE
 *   **Description**: Unseeded randomness can cause divergent states if a tick is retried by the provider.
 *   **Definitive Fix**: The Engine must manage a `random_seed` within the `GameState` and provide a pre-seeded, deterministic random generator to the `GameRules` to ensure execution is consistent across serverless retries. (update rps.py accordingly)
 
-### 11. Real-Time Delta Enforcement
+### ✅DONE 11. Real-Time Delta Enforcement
 *   **Description**: Assuming a fixed 500ms interval for logic cycles leads to jittery or incorrect timing (e.g. cooldowns).
 *   **Definitive Fix**: The Engine must handle the precise calculation of `delta_ms` based on actual database timestamps, ensuring that `GameRules` receive accurate time-step information regardless of external scheduling delays or serverless cold starts. (update rps.py accordingly)
 

@@ -73,10 +73,24 @@ class SQLiteDatabase(DatabaseInterface):
             return json.loads(row["data"])
         return None
 
-    def update (self, collection: str, record_id: str, data: dict[str, Any]) -> bool:
+    def update (self, collection: str, record_id: str, data: dict[str, Any],
+                expected_version: int | None = None) -> bool:
         conn = self._get_connection()
         if not self._table_exists(conn, collection):
             return False
+
+        if expected_version is not None:
+            # CAS: read current data, check version, then update atomically
+            cursor = conn.execute(
+                f'SELECT data FROM "{collection}" WHERE record_id = ?',
+                (record_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return False
+            current_data = json.loads(row["data"])
+            if current_data.get("version", 0) != expected_version:
+                return False  # CAS failure -- another writer won
 
         cursor = conn.execute(
             f'UPDATE "{collection}" SET timestamp = ?, data = ? WHERE record_id = ?',

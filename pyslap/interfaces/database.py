@@ -26,10 +26,13 @@ class DatabaseInterface(ABC):
         pass
 
     @abstractmethod
-    def update(self, collection: str, record_id: str, data: dict[str, Any]) -> bool:
+    def update(self, collection: str, record_id: str, data: dict[str, Any],
+               expected_version: int | None = None) -> bool:
         """
         Updates an existing record with new data.
-        Returns True if the update was successful, False otherwise.
+        If expected_version is provided, the update only succeeds when the
+        record's current 'version' field matches. Returns False on mismatch
+        (CAS failure) or if the record doesn't exist.
         """
         pass
 

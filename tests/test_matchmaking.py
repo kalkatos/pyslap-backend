@@ -87,7 +87,8 @@ def test_join_matchmaking_session():
         "status": SessionStatus.MATCHMAKING,
         "players": {"p1": {"player_id": "p1", "name": "Alice", "token": "t1"}},
         "created_at": time.time(),
-        "last_action_at": time.time()
+        "last_action_at": time.time(),
+        "version": 0
     }]
     
     engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
@@ -116,3 +117,169 @@ def test_join_matchmaking_session():
     
     assert "p2" in updated_state["private_state"]
     assert updated_state["private_state"]["p2"]["joined"] is True
+
+
+def test_matchmaking_cas_failure_retries():
+    """Test that CAS failure on session update triggers a retry."""
+    mock_db = MagicMock()
+    mock_scheduler = MagicMock()
+    games = {"mm_game": MatchmakingGame()}
+
+    def mock_db_read(coll, id):
+        if coll == "players":
+            return {"id": id, "name": "Player"}
+        if coll == "game_configs":
+            return {"update_interval_ms": 1000, "max_players": 2}
+        if coll == "states":
+            return {
+                "session_id": "sid_1",
+                "last_update_timestamp": time.time(),
+                "public_state": {"phase": "waiting_for_players"},
+                "private_state": {"p1": {}}
+            }
+        return None
+
+    mock_db.read.side_effect = mock_db_read
+
+    # Return fresh session data on each query call (since code modifies it)
+    def mock_query(collection, filters):
+        return [{
+            "id": "sid_1",
+            "session_id": "sid_1",
+            "game_id": "mm_game",
+            "status": SessionStatus.MATCHMAKING,
+            "players": {"p1": {"player_id": "p1", "name": "Alice", "token": "t1"}},
+            "created_at": time.time(),
+            "last_action_at": time.time(),
+            "version": 0
+        }]
+
+    mock_db.query.side_effect = mock_query
+
+    # Mock update: first session update fails (CAS), second session update succeeds, state update succeeds
+    mock_db.update.side_effect = [False, True, True]
+
+    engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
+
+    auth_token = engine.security.create_debug_external_token("p2", "Bob")
+    result = engine.create_session("mm_game", auth_token, custom_data={"matchmaking": True})
+
+    # Despite the first CAS failure, the retry should succeed
+    assert result is not None
+    assert result["session_id"] == "sid_1"
+
+    # Verify update was called twice for sessions (first failed, second succeeded)
+    session_updates = [call for call in mock_db.update.call_args_list if call[0][0] == "sessions"]
+    assert len(session_updates) >= 1
+
+
+def test_matchmaking_cas_all_retries_exhausted():
+    """Test that exhausted CAS retries fall through to creating a new session."""
+    mock_db = MagicMock()
+    mock_scheduler = MagicMock()
+    games = {"mm_game": MatchmakingGame()}
+
+    def mock_db_read(coll, id):
+        if coll == "players":
+            return {"id": id, "name": "Player"}
+        if coll == "game_configs":
+            return {"update_interval_ms": 1000, "max_players": 2}
+        if coll == "states":
+            return {
+                "session_id": "sid_1",
+                "last_update_timestamp": time.time(),
+                "public_state": {"phase": "waiting_for_players"},
+                "private_state": {"p1": {}}
+            }
+        return None
+
+    mock_db.read.side_effect = mock_db_read
+
+    # Return fresh session data on each query call
+    def mock_query(collection, filters):
+        return [{
+            "id": "sid_1",
+            "session_id": "sid_1",
+            "game_id": "mm_game",
+            "status": SessionStatus.MATCHMAKING,
+            "players": {"p1": {"player_id": "p1", "name": "Alice", "token": "t1"}},
+            "created_at": time.time(),
+            "last_action_at": time.time(),
+            "version": 0
+        }]
+
+    mock_db.query.side_effect = mock_query
+
+    # Mock update to always fail (CAS always loses)
+    mock_db.update.return_value = False
+
+    engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
+
+    auth_token = engine.security.create_debug_external_token("p2", "Bob")
+    result = engine.create_session("mm_game", auth_token, custom_data={"matchmaking": True})
+
+    # Should fall through to creating a new session
+    assert result is not None
+    # Verify that create was called (new session creation)
+    assert mock_db.create.call_count >= 2
+
+
+def test_matchmaking_version_incremented_on_join():
+    """Test that session version is incremented when a player joins."""
+    mock_db = MagicMock()
+    mock_scheduler = MagicMock()
+    games = {"mm_game": MatchmakingGame()}
+
+    def mock_db_read(coll, id):
+        if coll == "players":
+            return {"id": id, "name": "Player"}
+        if coll == "game_configs":
+            return {"update_interval_ms": 1000, "max_players": 2}
+        if coll == "states":
+            return {
+                "session_id": "sid_1",
+                "last_update_timestamp": time.time(),
+                "public_state": {"phase": "waiting_for_players"},
+                "private_state": {"p1": {}}
+            }
+        return None
+
+    mock_db.read.side_effect = mock_db_read
+
+    # Return fresh session data on each query call
+    def mock_query(collection, filters):
+        return [{
+            "id": "sid_1",
+            "session_id": "sid_1",
+            "game_id": "mm_game",
+            "status": SessionStatus.MATCHMAKING,
+            "players": {"p1": {"player_id": "p1", "name": "Alice", "token": "t1"}},
+            "created_at": time.time(),
+            "last_action_at": time.time(),
+            "version": 0
+        }]
+
+    mock_db.query.side_effect = mock_query
+    mock_db.update.return_value = True
+
+    engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
+
+    auth_token = engine.security.create_debug_external_token("p2", "Bob")
+    result = engine.create_session("mm_game", auth_token, custom_data={"matchmaking": True})
+
+    assert result is not None
+
+    # Verify that update was called with expected_version=0 (the original version)
+    session_updates = [call for call in mock_db.update.call_args_list if call[0][0] == "sessions"]
+    assert len(session_updates) == 1
+
+    # Check the call arguments - update is called as:
+    # self.db.update("sessions", s_id, updated_session_data, expected_version=current_version)
+    call_args, call_kwargs = session_updates[0]
+    # args are: (collection, record_id, data)
+    # kwargs have: expected_version
+    assert call_kwargs.get("expected_version") == 0, "expected_version should be 0"
+
+    # Check that the data contains version=1
+    updated_data = call_args[2]
+    assert updated_data["version"] == 1, "version should be incremented to 1"

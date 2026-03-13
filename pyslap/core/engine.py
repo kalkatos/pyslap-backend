@@ -92,62 +92,79 @@ class PySlapEngine:
 
         # Handle Matchmaking Wait-and-Join
         if custom_data and custom_data.get("matchmaking"):
+            MAX_CAS_RETRIES = 3
             query_filters = {"game_id": game_id, "status": SessionStatus.MATCHMAKING}
-            
-            # If a specific lobby is requested, filter by it. 
+
+            # If a specific lobby is requested, filter by it.
             # Otherwise, only match with sessions that have NO lobby_id (general matchmaking).
             join_lobby_id = custom_data.get("join_lobby")
             query_filters["lobby_id"] = join_lobby_id
 
-            waiting_sessions = self.db.query("sessions", query_filters)
-            
-            for session_data in waiting_sessions:
-                s_id = session_data["id"]
-                session_data.pop("id", None)
-                session = Session(**session_data)
-                
-                if player.player_id in session.players:
-                    continue  # Player is already in this session
-                
-                player.token = self.security.generate_session_token(player.player_id, s_id, role)
-                session.players[player.player_id] = player
-                
-                state_data = self.db.read("states", s_id)
-                if not state_data:
-                    continue
-                state_data.pop("id", None)
-                state = GameState(**state_data)
+            for _attempt in range(MAX_CAS_RETRIES + 1):
+                waiting_sessions = self.db.query("sessions", query_filters)
 
-                # Assign sticky slot if not already assigned
-                if player.player_id not in state.slots.values():
-                    slot_id = f"slot_{len(state.slots)}"
-                    state.slots[slot_id] = player.player_id
-                
-                if len(session.players) >= config.max_players:
-                    session.status = SessionStatus.ACTIVE
-                
-                updated_session_data = asdict(session)
-                updated_session_data["id"] = s_id
-                self.db.update("sessions", s_id, updated_session_data)
-                
-                # Record phase before game-rules touch it
-                original_phase = state.public_state.get("phase")
+                for session_data in waiting_sessions:
+                    s_id = session_data["id"]
+                    session_data.pop("id", None)
+                    session = Session(**session_data)
 
-                state = self.games[game_id].setup_player_state(state, player)
+                    if player.player_id in session.players:
+                        continue  # Player is already in this session
 
-                # Engine-owned version bump on phase change (mirrors process_update_loop)
-                new_phase = state.public_state.get("phase")
-                if new_phase != original_phase:
-                    state.state_version += 1
-                    state.phase_ack = {p: False for p in session.players.keys()}
-                    state.phase_ack_since = time.time()
-                
-                updated_state_data = asdict(state)
-                updated_state_data["id"] = s_id
-                self.db.update("states", s_id, updated_state_data)
-                
-                client_state = state.to_player_state(player.player_id)
-                return {"session_id": s_id, "token": player.token, "state": client_state, "lobby_id": session.lobby_id}
+                    # Capture version before mutation
+                    current_version = session.version
+
+                    player.token = self.security.generate_session_token(player.player_id, s_id, role)
+                    session.players[player.player_id] = player
+
+                    state_data = self.db.read("states", s_id)
+                    if not state_data:
+                        continue
+                    state_data.pop("id", None)
+                    state = GameState(**state_data)
+
+                    # Assign sticky slot if not already assigned
+                    if player.player_id not in state.slots.values():
+                        slot_id = f"slot_{len(state.slots)}"
+                        state.slots[slot_id] = player.player_id
+
+                    if len(session.players) >= config.max_players:
+                        session.status = SessionStatus.ACTIVE
+
+                    # Bump version for CAS
+                    session.version = current_version + 1
+
+                    updated_session_data = asdict(session)
+                    updated_session_data["id"] = s_id
+
+                    # CAS write -- fails if another player joined first
+                    if not self.db.update("sessions", s_id, updated_session_data,
+                                        expected_version=current_version):
+                        break  # CAS failed, retry outer loop with fresh query
+
+                    # CAS succeeded -- safe to update state
+                    # Record phase before game-rules touch it
+                    original_phase = state.public_state.get("phase")
+
+                    state = self.games[game_id].setup_player_state(state, player)
+
+                    # Engine-owned version bump on phase change (mirrors process_update_loop)
+                    new_phase = state.public_state.get("phase")
+                    if new_phase != original_phase:
+                        state.state_version += 1
+                        state.phase_ack = {p: False for p in session.players.keys()}
+                        state.phase_ack_since = time.time()
+
+                    updated_state_data = asdict(state)
+                    updated_state_data["id"] = s_id
+                    self.db.update("states", s_id, updated_state_data)
+
+                    client_state = state.to_player_state(player.player_id)
+                    return {"session_id": s_id, "token": player.token, "state": client_state, "lobby_id": session.lobby_id}
+                else:
+                    # Inner for-loop exhausted all candidates without a CAS failure
+                    # No point retrying -- fall through to create a new session.
+                    break
 
         # Create Session Object
         session_id = str(uuid.uuid4())
