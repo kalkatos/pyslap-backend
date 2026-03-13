@@ -27,7 +27,7 @@ class DatabaseInterface(ABC):
 
     @abstractmethod
     def update(self, collection: str, record_id: str, data: dict[str, Any],
-               expected_version: int | None = None) -> bool:
+               expected_version: Optional[int] = None) -> bool:
         """
         Updates an existing record with new data.
         If expected_version is provided, the update only succeeds when the

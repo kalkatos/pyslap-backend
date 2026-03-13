@@ -1,4 +1,5 @@
 import sqlite3
+import threading
 import json
 import uuid
 import os
@@ -18,17 +19,21 @@ class SQLiteDatabase(DatabaseInterface):
         self.db_path = db_path
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._lock = threading.Lock()
         self._init_db()
 
     def _get_connection (self):
         return self._conn
 
     def _table_exists (self, conn, table_name: str) -> bool:
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (table_name,),
-        )
-        return cursor.fetchone() is not None
+        try:
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,),
+            )
+            return cursor.fetchone() is not None
+        except sqlite3.Error:
+            return False
 
     def _init_db (self):
         """No generic tables to initialize upfront."""
@@ -47,80 +52,90 @@ class SQLiteDatabase(DatabaseInterface):
         if "id" not in data:
             data["id"] = record_id
 
-        conn = self._get_connection()
-        conn.execute(
-            f'CREATE TABLE IF NOT EXISTS "{collection}" (record_id TEXT PRIMARY KEY, timestamp REAL, data TEXT)'
-        )
-        conn.execute(
-            f'INSERT OR REPLACE INTO "{collection}" (record_id, timestamp, data) VALUES (?, ?, ?)',
-            (record_id, time.time(), json.dumps(data)),
-        )
-        conn.commit()
+        with self._lock:
+            conn = self._get_connection()
+            # Retry loop for potential locked database
+            for _ in range(5):
+                try:
+                    conn.execute(
+                        f'CREATE TABLE IF NOT EXISTS "{collection}" (record_id TEXT PRIMARY KEY, timestamp REAL, data TEXT)'
+                    )
+                    conn.execute(
+                        f'INSERT OR REPLACE INTO "{collection}" (record_id, timestamp, data) VALUES (?, ?, ?)',
+                        (record_id, time.time(), json.dumps(data)),
+                    )
+                    conn.commit()
+                    break
+                except sqlite3.OperationalError as e:
+                    if "locked" in str(e).lower():
+                        time.sleep(0.05)
+                        continue
+                    raise
 
         return record_id
 
     def read (self, collection: str, record_id: str) -> Optional[dict[str, Any]]:
-        conn = self._get_connection()
-        if not self._table_exists(conn, collection):
-            return None
+        with self._lock:
+            conn = self._get_connection()
+            if not self._table_exists(conn, collection):
+                return None
 
-        cursor = conn.execute(
-            f'SELECT data FROM "{collection}" WHERE record_id = ?', (record_id,)
-        )
-        row = cursor.fetchone()
+            cursor = conn.execute(
+                f'SELECT data FROM "{collection}" WHERE record_id = ?', (record_id,)
+            )
+            row = cursor.fetchone()
 
         if row:
             return json.loads(row["data"])
         return None
 
     def update (self, collection: str, record_id: str, data: dict[str, Any],
-                expected_version: int | None = None) -> bool:
-        conn = self._get_connection()
-        if not self._table_exists(conn, collection):
-            return False
-
-        if expected_version is not None:
-            # CAS: read current data, check version, then update atomically
-            cursor = conn.execute(
-                f'SELECT data FROM "{collection}" WHERE record_id = ?',
-                (record_id,),
-            )
-            row = cursor.fetchone()
-            if not row:
+                expected_version: Optional[int] = None) -> bool:
+        with self._lock:
+            conn = self._get_connection()
+            if not self._table_exists(conn, collection):
                 return False
-            current_data = json.loads(row["data"])
-            if current_data.get("version", 0) != expected_version:
-                return False  # CAS failure -- another writer won
 
-        cursor = conn.execute(
-            f'UPDATE "{collection}" SET timestamp = ?, data = ? WHERE record_id = ?',
-            (time.time(), json.dumps(data), record_id),
-        )
-        conn.commit()
-        return cursor.rowcount > 0
+            if expected_version is not None:
+                # Use SQLite's json_extract to check the version in the JSON data column atomically
+                cursor = conn.execute(
+                    f'UPDATE "{collection}" SET timestamp = ?, data = ? WHERE record_id = ? AND json_extract(data, "$.version") = ?',
+                    (time.time(), json.dumps(data), record_id, expected_version),
+                )
+            else:
+                cursor = conn.execute(
+                    f'UPDATE "{collection}" SET timestamp = ?, data = ? WHERE record_id = ?',
+                    (time.time(), json.dumps(data), record_id),
+                )
+            
+            conn.commit()
+            return cursor.rowcount > 0
 
     def delete (self, collection: str, record_id: str) -> bool:
-        conn = self._get_connection()
-        if not self._table_exists(conn, collection):
-            return False
+        with self._lock:
+            conn = self._get_connection()
+            if not self._table_exists(conn, collection):
+                return False
 
-        cursor = conn.execute(
-            f'DELETE FROM "{collection}" WHERE record_id = ?', (record_id,)
-        )
-        conn.commit()
-        return cursor.rowcount > 0
+            cursor = conn.execute(
+                f'DELETE FROM "{collection}" WHERE record_id = ?', (record_id,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
 
     def query (self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
         # For a local mock DB, it's safer to fetch all collection items
         # and filter in Python rather than dealing with SQLite JSON intricacies.
-        conn = self._get_connection()
-        if not self._table_exists(conn, collection):
-            return []
+        with self._lock:
+            conn = self._get_connection()
+            if not self._table_exists(conn, collection):
+                return []
 
-        cursor = conn.execute(f'SELECT data FROM "{collection}"')
+            cursor = conn.execute(f'SELECT data FROM "{collection}"')
+            rows = cursor.fetchall()
 
         results = []
-        for row in cursor.fetchall():
+        for row in rows:
             data = json.loads(row["data"])
 
             # Check if all filters match
