@@ -5,6 +5,7 @@ from pyslap.core.engine import PySlapEngine
 from pyslap.core.game_rules import GameRules
 from pyslap.models.domain import Action, GameState, SessionStatus, Player
 from typing import Any, Dict
+import random
 
 
 class MatchmakingGame(GameRules):
@@ -15,10 +16,10 @@ class MatchmakingGame(GameRules):
     def validate_action(self, action: Action, state: GameState) -> bool:
         return True
 
-    def apply_action(self, action: Action, state: GameState) -> GameState:
+    def apply_action(self, action: Action, state: GameState, rng: random.Random) -> GameState:
         return state
 
-    def apply_update_tick(self, state: GameState, delta_ms: int) -> GameState:
+    def apply_update_tick(self, state: GameState, delta_ms: int, rng: random.Random) -> GameState:
         return state
 
     def check_game_over(self, state: GameState) -> bool:
