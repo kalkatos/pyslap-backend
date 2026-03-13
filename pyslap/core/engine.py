@@ -26,6 +26,7 @@ class PySlapEngine:
     security: SecurityManager
 
     MINIMUM_UPDATE_INTERVAL_MS = 100
+    DEFAULT_LOOP_LEASE_SEC = 30.0
 
     def __init__(
         self,
@@ -329,11 +330,79 @@ class PySlapEngine:
 
         return True
 
+    def _try_acquire_loop_lock(
+        self, session_id: str, holder_id: str, lease_sec: float = DEFAULT_LOOP_LEASE_SEC
+    ) -> bool:
+        """
+        Attempts to acquire a distributed lease for a session's update loop.
+        Uses CAS to prevent concurrent loop execution in serverless environments.
+        Returns True if the lock was acquired, False otherwise.
+        """
+        lock_id = f"loop_{session_id}"
+        now = time.time()
+
+        existing = self.db.read("locks", lock_id)
+
+        if existing is None:
+            # No lock exists — create one and claim it.
+            # NOTE: For production distributed databases, the create method
+            # should support conditional insertion (e.g., DynamoDB
+            # attribute_not_exists) to prevent a narrow create-race.
+            # The local SQLite implementation is protected by its thread lock.
+            self.db.create("locks", {
+                "id": lock_id,
+                "session_id": session_id,
+                "holder_id": holder_id,
+                "expires_at": now + lease_sec,
+                "version": 0,
+            })
+            return True
+
+        # Lock exists and is still valid — another instance holds it.
+        if existing.get("expires_at", 0) > now:
+            return False
+
+        # Lock is expired — attempt CAS takeover.
+        current_version = existing.get("version", 0)
+        new_lock = {
+            "id": lock_id,
+            "session_id": session_id,
+            "holder_id": holder_id,
+            "expires_at": now + lease_sec,
+            "version": current_version + 1,
+        }
+        return self.db.update("locks", lock_id, new_lock, expected_version=current_version)
+
+    def _release_loop_lock(self, session_id: str, holder_id: str) -> None:
+        """
+        Releases a previously acquired loop lock, but only if we still own it.
+        """
+        lock_id = f"loop_{session_id}"
+        existing = self.db.read("locks", lock_id)
+        if existing and existing.get("holder_id") == holder_id:
+            self.db.delete("locks", lock_id)
+
     def process_update_loop(self, session_id: str) -> None:
         """
         The polling loop executed periodically. Processes pending actions and game state.
         This must be independent of other runs (Serverless requirement).
+
+        Acquires a distributed lease before processing to ensure exactly one
+        instance runs per session at a time. If the lock cannot be acquired,
+        this invocation is silently skipped.
         """
+        holder_id = str(uuid.uuid4())
+
+        if not self._try_acquire_loop_lock(session_id, holder_id):
+            return  # Another instance is already processing this session
+
+        try:
+            self._execute_update_loop(session_id)
+        finally:
+            self._release_loop_lock(session_id, holder_id)
+
+    def _execute_update_loop(self, session_id: str) -> None:
+        """Core update loop logic, called under distributed lock protection."""
         current_time = time.time()
 
         # 1. Load Session & Config

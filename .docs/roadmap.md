@@ -76,13 +76,18 @@ Features already done are marked with ✅DONE
 
 ## 🛠️ Audit-Driven Fixes (High Priority)
 
-### 13. Atomic Matchmaking
+### ✅DONE 13. Atomic Matchmaking
 *   **Description**: Prevent players from overwriting each other when joining a session simultaneously.
 *   **Changes**: Implement atomic "Compare-And-Swap" logic in `engine.create_session` to ensure player slots are filled correctly without race conditions.
 
-### 14. Distributed Update Loop Protection
-*   **Description**: Ensure exactly one loop instance runs per session in serverless environments to prevent "Last Write Wins" data loss.
-*   **Changes**: Implement a distributed locking or lease pattern in `process_update_loop` using atomic database operations.
+### ✅DONE 14. Distributed Update Loop Protection
+*   **Description**: Ensure exactly one update loop instance runs per session in serverless environments to prevent "Last Write Wins" data loss.
+*   **Changes**:
+    *   Implement a distributed locking or lease mechanism in `process_update_loop` using atomic database operations (e.g., a lock document with an expiration timestamp).
+    *   Before starting the update loop, attempt to acquire the lock; only proceed if successful.
+    *   Periodically renew the lock while the loop is active.
+    *   Release the lock when the loop completes or terminates unexpectedly.
+*   **Testing**: Simulate concurrent update loop invocations for the same session and verify that only one instance processes updates at a time, with no conflicting writes.
 
 ### 15. Decoupled Data Cleanup
 *   **Description**: Stop scanning the entire database for old records on every request instantiation.
