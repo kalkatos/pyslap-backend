@@ -1,7 +1,3 @@
----
-trigger: manual
----
-
 # PySlap Roadmap & Technical Implementation Guide
 
 This document provides technical blueprints for future PySlap enhancements. Refer to these items for subsequent development phases.
@@ -71,12 +67,41 @@ Features already done are marked with ✅DONE
 *   **Description**: Unseeded randomness can cause divergent states if a tick is retried by the provider.
 *   **Definitive Fix**: The Engine must manage a `random_seed` within the `GameState` and provide a pre-seeded, deterministic random generator to the `GameRules` to ensure execution is consistent across serverless retries. (update rps.py accordingly)
 
-### ✅DONE 11. Real-Time Delta Enforcement
+### 11. Real-Time Delta Enforcement
 *   **Description**: Assuming a fixed 500ms interval for logic cycles leads to jittery or incorrect timing (e.g. cooldowns).
 *   **Definitive Fix**: The Engine must handle the precise calculation of `delta_ms` based on actual database timestamps, ensuring that `GameRules` receive accurate time-step information regardless of external scheduling delays or serverless cold starts. (update rps.py accordingly)
 
 ### 12. Update README.md
 *   **Description**: Check if @pyslap\README.md is up to date with current codebase workflow, and update if necessary.
 
-### 13. Gather more features, fixes and improvements
-*   **Description**: Run through the code and find brittle points, bottlenecks, and code smells that can be fixed or improved. Also, identify what current games/ implementations do that could potentially be fixed definitively at the engine side.
+## 🛠️ Audit-Driven Fixes (High Priority)
+
+### 13. Atomic Matchmaking
+*   **Description**: Prevent players from overwriting each other when joining a session simultaneously.
+*   **Changes**: Implement atomic "Compare-And-Swap" logic in `engine.create_session` to ensure player slots are filled correctly without race conditions.
+
+### 14. Distributed Update Loop Protection
+*   **Description**: Ensure exactly one loop instance runs per session in serverless environments to prevent "Last Write Wins" data loss.
+*   **Changes**: Implement a distributed locking or lease pattern in `process_update_loop` using atomic database operations.
+
+### 15. Decoupled Data Cleanup
+*   **Description**: Stop scanning the entire database for old records on every request instantiation.
+*   **Changes**: Move `_cleanup_old_records` from `PySlapEngine.__init__` to a dedicated maintenance task or background worker.
+
+### 16. Server-Side Query Filtering
+*   **Description**: Prevent loading entire collections into memory for filtering.
+*   **Changes**: Update `DatabaseInterface.query` to support efficient database-level filtering (e.g., SQL `WHERE` clauses).
+
+### 17. Functional Anti-Spam
+*   **Description**: Replace the current `True` stub with actual rate-limiting logic.
+*   **Changes**: Implement tracking of action frequency per player in `Validator.validate_action_rate`.
+
+### 18. Deterministic Lobby Generation
+*   **Description**: Ensure lobby ID generation is idempotent and testable.
+*   **Changes**: replace global `random.choice` with a seeded local generator derived from requester inputs.
+
+### 19. Granular State Versioning
+*   **Description**: Ensure clients detect every change to the game state.
+*   **Changes**: Bump `state_version` on every state-mutating action or internal tick update, not just on phase transitions.
+
+
