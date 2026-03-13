@@ -123,6 +123,56 @@ class SQLiteDatabase(DatabaseInterface):
             conn.commit()
             return cursor.rowcount > 0
 
+    # Operator suffixes supported by delete_by_filter and _build_filter_clauses
+    _OPERATORS = {"__lt": "<", "__lte": "<=", "__gt": ">", "__gte": ">="}
+
+    def _build_filter_clauses (self, filters: dict[str, Any]) -> tuple[str, list[Any]]:
+        """
+        Translates a filter dict into SQL WHERE clauses using json_extract.
+        Returns (where_sql, params) — where_sql includes the leading ' WHERE '
+        if any filters are present, or an empty string otherwise.
+        """
+        clauses: list[str] = []
+        params: list[Any] = []
+
+        for key, value in filters.items():
+            sql_op = "="
+            field = key
+            for suffix, op in self._OPERATORS.items():
+                if key.endswith(suffix):
+                    sql_op = op
+                    field = key[: -len(suffix)]
+                    break
+
+            clauses.append(f'json_extract(data, "$.{field}") {sql_op} ?')
+            params.append(value)
+
+        where_sql = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        return where_sql, params
+
+    def delete_by_filter (self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
+        where_sql, params = self._build_filter_clauses(filters)
+
+        with self._lock:
+            conn = self._get_connection()
+            if not self._table_exists(conn, collection):
+                return []
+
+            # Fetch matching rows first so we can return them
+            cursor = conn.execute(
+                f'SELECT data FROM "{collection}"{where_sql}', params
+            )
+            rows = cursor.fetchall()
+            deleted = [json.loads(row["data"]) for row in rows]
+
+            if deleted:
+                conn.execute(
+                    f'DELETE FROM "{collection}"{where_sql}', params
+                )
+                conn.commit()
+
+        return deleted
+
     def query (self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
         # For a local mock DB, it's safer to fetch all collection items
         # and filter in Python rather than dealing with SQLite JSON intricacies.

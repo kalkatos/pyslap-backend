@@ -89,9 +89,13 @@ Features already done are marked with ✅DONE
     *   Release the lock when the loop completes or terminates unexpectedly.
 *   **Testing**: Simulate concurrent update loop invocations for the same session and verify that only one instance processes updates at a time, with no conflicting writes.
 
-### 15. Decoupled Data Cleanup
-*   **Description**: Stop scanning the entire database for old records on every request instantiation.
-*   **Changes**: Move `_cleanup_old_records` from `PySlapEngine.__init__` to a dedicated maintenance task or background worker.
+### ✅DONE 15. Decoupled Data Cleanup
+*   **Description**: Remove the global database scan/deletion of old sessions and actions from the request lifecycle to improve performance in serverless environments.
+*   **Changes**:
+    *   **Remove** the `_cleanup_old_records()` call from `PySlapEngine.__init__`.
+    *   **Implement** a dedicated maintenance entrypoint or background worker that invokes this cleanup logic independently.
+    *   **Optimize** the `_cleanup_old_records` query logic to use server-side filtering (e.g., `WHERE created_at < ?`) instead of loading the entire table into memory.
+*   **Testing**: Verify that the engine no longer performs database deletions during normal session creation/updates. Verify that the standalone maintenance task correctly identifies and removes stale records.
 
 ### 16. Server-Side Query Filtering
 *   **Description**: Prevent loading entire collections into memory for filtering.

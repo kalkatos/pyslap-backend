@@ -50,27 +50,36 @@ class PySlapEngine:
             
         self.security = SecurityManager(**security_kwargs)
         self.scheduler.set_callback(self.process_update_loop)
-        self._cleanup_old_records()
 
-    def _cleanup_old_records (self, max_age_sec: int = 5 * 3600) -> None:
-        """Deletes sessions older than max_age_sec (default 5 hours) and their related data."""
+    def cleanup_old_records (self, max_age_sec: int = 5 * 3600) -> int:
+        """
+        Deletes sessions older than max_age_sec (default 5 hours) and their related data.
+
+        This is a maintenance operation that should be invoked independently
+        (e.g. via a cron job, Cloud Scheduler, or background worker) — NOT during
+        normal request handling.
+
+        Uses server-side filtering to avoid loading entire collections into memory.
+        Returns the number of cleaned-up sessions.
+        """
         cutoff = time.time() - max_age_sec
-        old_sessions = [
-            s
-            for s in self.db.query("sessions", {})
-            if s.get("created_at", float("inf")) < cutoff
-        ]
+
+        # Server-side filtered query: only fetch sessions older than cutoff
+        old_sessions = self.db.delete_by_filter("sessions", {"created_at__lt": cutoff})
+
+        cleaned = 0
         for session in old_sessions:
             session_id = session["id"]
 
-            # Delete all actions tied to this session
-            old_actions = self.db.query("actions", {"session_id": session_id})
-            for action in old_actions:
-                self.db.delete("actions", action["id"])
+            # Batch-delete all actions tied to this session
+            self.db.delete_by_filter("actions", {"session_id": session_id})
 
-            # Delete state and session records
+            # Delete the state record
             self.db.delete("states", session_id)
-            self.db.delete("sessions", session_id)
+
+            cleaned += 1
+
+        return cleaned
 
     def create_session (
         self, game_id: str, auth_token: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None

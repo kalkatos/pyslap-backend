@@ -50,3 +50,18 @@ class DatabaseInterface(ABC):
         Retrieves records from a collection that match the provided filters.
         """
         pass
+
+    @abstractmethod
+    def delete_by_filter (self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
+        """
+        Deletes all records matching the provided filters and returns the
+        deleted records.
+
+        Supports comparison operators via suffixed keys:
+          - "field__lt": value  →  field < value
+          - "field__lte": value →  field <= value
+          - "field__gt": value  →  field > value
+          - "field__gte": value →  field >= value
+          - "field": value      →  field = value (exact match)
+        """
+        pass
