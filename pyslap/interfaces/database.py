@@ -48,6 +48,14 @@ class DatabaseInterface(ABC):
     def query(self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
         """
         Retrieves records from a collection that match the provided filters.
+
+        Supports comparison operators via suffixed keys:
+          - "field__lt": value  →  field < value
+          - "field__lte": value →  field <= value
+          - "field__gt": value  →  field > value
+          - "field__gte": value →  field >= value
+          - "field__ne": value  →  field != value
+          - "field": value      →  field = value (exact match)
         """
         pass
 
@@ -62,6 +70,7 @@ class DatabaseInterface(ABC):
           - "field__lte": value →  field <= value
           - "field__gt": value  →  field > value
           - "field__gte": value →  field >= value
+          - "field__ne": value  →  field != value
           - "field": value      →  field = value (exact match)
         """
         pass

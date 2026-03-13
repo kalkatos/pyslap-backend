@@ -124,7 +124,7 @@ class SQLiteDatabase(DatabaseInterface):
             return cursor.rowcount > 0
 
     # Operator suffixes supported by delete_by_filter and _build_filter_clauses
-    _OPERATORS = {"__lt": "<", "__lte": "<=", "__gt": ">", "__gte": ">="}
+    _OPERATORS = {"__lt": "<", "__lte": "<=", "__gt": ">", "__gte": ">=", "__ne": "!="}
 
     def _build_filter_clauses (self, filters: dict[str, Any]) -> tuple[str, list[Any]]:
         """
@@ -174,28 +174,16 @@ class SQLiteDatabase(DatabaseInterface):
         return deleted
 
     def query (self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
-        # For a local mock DB, it's safer to fetch all collection items
-        # and filter in Python rather than dealing with SQLite JSON intricacies.
+        where_sql, params = self._build_filter_clauses(filters)
+
         with self._lock:
             conn = self._get_connection()
             if not self._table_exists(conn, collection):
                 return []
 
-            cursor = conn.execute(f'SELECT data FROM "{collection}"')
+            cursor = conn.execute(
+                f'SELECT data FROM "{collection}"{where_sql}', params
+            )
             rows = cursor.fetchall()
 
-        results = []
-        for row in rows:
-            data = json.loads(row["data"])
-
-            # Check if all filters match
-            match = True
-            for key, value in filters.items():
-                if data.get(key) != value:
-                    match = False
-                    break
-
-            if match:
-                results.append(data)
-
-        return results
+        return [json.loads(row["data"]) for row in rows]

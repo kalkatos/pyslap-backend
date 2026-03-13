@@ -97,7 +97,7 @@ Features already done are marked with ✅DONE
     *   **Optimize** the `_cleanup_old_records` query logic to use server-side filtering (e.g., `WHERE created_at < ?`) instead of loading the entire table into memory.
 *   **Testing**: Verify that the engine no longer performs database deletions during normal session creation/updates. Verify that the standalone maintenance task correctly identifies and removes stale records.
 
-### 16. Server-Side Query Filtering
+### ✅DONE 16. Server-Side Query Filtering
 *   **Description**: Prevent loading entire collections into memory for filtering.
 *   **Changes**: Update `DatabaseInterface.query` to support efficient database-level filtering (e.g., SQL `WHERE` clauses).
 
