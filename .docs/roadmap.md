@@ -105,7 +105,7 @@ Features already done are marked with ✅DONE
 *   **Description**: Replace the current `True` stub with logic that enforces minimum time gaps between actions on a per-player basis.
 *   **Changes**: Update `Validator.validate_action_rate` to track the last action timestamp for each player (stored in the session or a dedicated `rate_limits` collection) and block actions if the delta is below the threshold.
 
-### 18. Deterministic Lobby Generation
+### ✅DONE 18. Deterministic Lobby Generation
 *   **Description**: Ensure lobby ID generation is idempotent and free of global side-effects, facilitating testability and consistency across serverless retries.
 *   **Changes**: Replace global `random.choice` in `PySlapEngine.create_session` with a local `random.Random` instance seeded by the requester's `player_id` or other deterministic inputs.
 

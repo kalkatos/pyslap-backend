@@ -1,6 +1,8 @@
 import random
 import time
 import uuid
+import hashlib
+import string
 from typing import Any, Mapping
 
 from dataclasses import asdict
@@ -190,10 +192,13 @@ class PySlapEngine:
 
         lobby_id = None
         if custom_data and custom_data.get("create_lobby"):
-            import string
-            # Generate a 6-letter uppercase ID (QOEMDU) using deterministic seeding
-            # Seed by player_id to ensure idempotent generation across serverless retries
-            lobby_rng = random.Random(hash(player.player_id) % (2**32))
+            # Generate a 6-letter uppercase ID (QOEMDU) using deterministic seeding.
+            # Use hashlib.sha256 for a stable hash across serverless instances/retries.
+            # Incorporate player_id and game_id to maintain consistency.
+            seed_material = f"{player.player_id}:{game_id}".encode()
+            seed = int(hashlib.sha256(seed_material).hexdigest(), 16) % (2**32)
+            
+            lobby_rng = random.Random(seed)
             letters = string.ascii_uppercase
             lobby_id = ''.join(lobby_rng.choice(letters) for i in range(6))
             # Automatically force matchmaking phase so others can join this lobby
