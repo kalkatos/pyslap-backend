@@ -191,9 +191,11 @@ class PySlapEngine:
         lobby_id = None
         if custom_data and custom_data.get("create_lobby"):
             import string
-            # Generate a 6-letter uppercase ID (QOEMDU)
+            # Generate a 6-letter uppercase ID (QOEMDU) using deterministic seeding
+            # Seed by player_id to ensure idempotent generation across serverless retries
+            lobby_rng = random.Random(hash(player.player_id) % (2**32))
             letters = string.ascii_uppercase
-            lobby_id = ''.join(random.choice(letters) for i in range(6))
+            lobby_id = ''.join(lobby_rng.choice(letters) for i in range(6))
             # Automatically force matchmaking phase so others can join this lobby
             initial_status = SessionStatus.MATCHMAKING
 
