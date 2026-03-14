@@ -18,17 +18,40 @@ class Validator:
     def validate_action_rate(self, session: Session, player_id: str, current_time: float, min_gap_ms: int = 200) -> bool:
         """
         Validates if the player is allowed to perform an action.
-        Prevents action spamming based on the difference between current_time
-        and the last recorded action time in the session.
+        Prevents action spamming by enforcing a minimum time gap between
+        consecutive actions on a per-player basis.
+
+        Tracks the last action timestamp per player in the 'rate_limits'
+        collection using a composite key of session_id:player_id.
         """
-        # In a real implementation we would fetch the specific player's last action timestamp
-        # For simplicity, we assume Session.last_action_at holds the latest overall action
-        # but a robust anti-spam would track per-player timestamps.
-        
-        # We simulate a check:
-        # if (current_time - player.last_action_at_ms) < min_gap_ms: return False
-        
-        return True # Stub implementation
+        rate_limit_id = f"{session.session_id}:{player_id}"
+        record = self.db.read("rate_limits", rate_limit_id)
+
+        if record is None:
+            return True  # First action from this player in this session
+
+        last_action_at = record.get("last_action_at", 0.0)
+        elapsed_ms = (current_time - last_action_at) * 1000
+
+        return elapsed_ms >= min_gap_ms
+
+    def record_action_rate(self, session_id: str, player_id: str, timestamp: float) -> None:
+        """
+        Records the timestamp of a successfully validated action for
+        per-player rate limiting.
+        """
+        rate_limit_id = f"{session_id}:{player_id}"
+        record = {
+            "id": rate_limit_id,
+            "session_id": session_id,
+            "player_id": player_id,
+            "last_action_at": timestamp,
+        }
+        existing = self.db.read("rate_limits", rate_limit_id)
+        if existing is None:
+            self.db.create("rate_limits", record)
+        else:
+            self.db.update("rate_limits", rate_limit_id, record)
 
     def log_action(self, action: Action, collection: str = "actions") -> bool:
         """

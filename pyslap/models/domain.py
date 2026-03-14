@@ -45,6 +45,7 @@ class GameConfig:
     session_timeout_sec: int = 300  # 5 minutes
     max_lifetime_sec: int = 3600    # 1 hour
     phase_ack_timeout_sec: int = 10 # max seconds to wait for all players to ack a gated phase
+    min_action_gap_ms: int = 200    # minimum milliseconds between consecutive actions per player
     custom_settings: dict[str, Any] = field(default_factory=dict)
 
 

@@ -101,16 +101,16 @@ Features already done are marked with ✅DONE
 *   **Description**: Prevent loading entire collections into memory for filtering.
 *   **Changes**: Update `DatabaseInterface.query` to support efficient database-level filtering (e.g., SQL `WHERE` clauses).
 
-### 17. Functional Anti-Spam
-*   **Description**: Replace the current `True` stub with actual rate-limiting logic.
-*   **Changes**: Implement tracking of action frequency per player in `Validator.validate_action_rate`.
+### ✅DONE 17. Functional Anti-Spam
+*   **Description**: Replace the current `True` stub with logic that enforces minimum time gaps between actions on a per-player basis.
+*   **Changes**: Update `Validator.validate_action_rate` to track the last action timestamp for each player (stored in the session or a dedicated `rate_limits` collection) and block actions if the delta is below the threshold.
 
 ### 18. Deterministic Lobby Generation
-*   **Description**: Ensure lobby ID generation is idempotent and testable.
-*   **Changes**: replace global `random.choice` with a seeded local generator derived from requester inputs.
+*   **Description**: Ensure lobby ID generation is idempotent and free of global side-effects, facilitating testability and consistency across serverless retries.
+*   **Changes**: Replace global `random.choice` in `PySlapEngine.create_session` with a local `random.Random` instance seeded by the requester's `player_id` or other deterministic inputs.
 
 ### 19. Granular State Versioning
-*   **Description**: Ensure clients detect every change to the game state.
-*   **Changes**: Bump `state_version` on every state-mutating action or internal tick update, not just on phase transitions.
+*   **Description**: Ensure clients detect every meaningful change to the game state, preventing "lost updates" and keeping the UI in sync even during internal logic changes.
+*   **Changes**: Update the engine to increment `state_version` on every state-mutating action successfully processed or on any logic tick that modifies public state, even if no phase transition occurs.
 
 

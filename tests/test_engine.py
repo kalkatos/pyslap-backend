@@ -75,7 +75,7 @@ def test_engine_create_session_unknown_game():
 def test_engine_register_action_success():
     mock_db = MagicMock()
     engine = PySlapEngine(db=mock_db, scheduler=MagicMock(), games_registry={})
-    
+
     # Mock session fetch — must include player with matching token for the new security check
     current_time = time.time()
     valid_token = engine.security.generate_session_token("p1", "sid_1")
@@ -87,24 +87,36 @@ def test_engine_register_action_success():
         "created_at": current_time,
         "last_action_at": current_time - 1000
     }
-    mock_db.read.return_value = mock_session
-    
+
+    def mock_db_read(collection, doc_id):
+        if collection == "sessions":
+            return mock_session
+        if collection == "game_configs":
+            return {"update_interval_ms": 1000}
+        return None  # rate_limits returns None (first action)
+
+    mock_db.read.side_effect = mock_db_read
+
     result = engine.register_action(
-        session_id="sid_1", 
-        player_id="p1", 
-        token=valid_token, 
-        action_type="move", 
+        session_id="sid_1",
+        player_id="p1",
+        token=valid_token,
+        action_type="move",
         payload={"x": 5},
         nonce=1
     )
-    
+
     assert result is True
-    
+
     # Verifying logging logic fired (via Validator within Engine)
-    assert mock_db.create.call_count == 1
-    call_args, call_kwargs = mock_db.create.call_args
-    assert call_args[0] == "actions"
-    assert call_args[1]["action_type"] == "move"
+    action_creates = [c for c in mock_db.create.call_args_list if c[0][0] == "actions"]
+    assert len(action_creates) == 1
+    assert action_creates[0][0][1]["action_type"] == "move"
+
+    # Verify rate limit was recorded
+    rate_creates = [c for c in mock_db.create.call_args_list if c[0][0] == "rate_limits"]
+    assert len(rate_creates) == 1
+    assert rate_creates[0][0][1]["player_id"] == "p1"
 
 
 def test_process_update_loop_executes_actions():

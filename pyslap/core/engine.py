@@ -74,6 +74,9 @@ class PySlapEngine:
             # Batch-delete all actions tied to this session
             self.db.delete_by_filter("actions", {"session_id": session_id})
 
+            # Delete rate limit records tied to this session
+            self.db.delete_by_filter("rate_limits", {"session_id": session_id})
+
             # Delete the state record
             self.db.delete("states", session_id)
 
@@ -266,9 +269,17 @@ class PySlapEngine:
 
         current_time = time.time()
 
+        # Load game config for rate limit threshold
+        config_data = self.db.read("game_configs", session.game_id) or {}
+        config_data.pop("id", None)
+        config = GameConfig(game_id=session.game_id, **config_data)
+
         # Anti-spam check
-        if not self.validator.validate_action_rate(session, player_id, current_time):
+        if not self.validator.validate_action_rate(session, player_id, current_time, config.min_action_gap_ms):
             return False
+
+        # Record rate limit timestamp after passing the check
+        self.validator.record_action_rate(session_id, player_id, current_time)
 
         # --- Native framework action: ack ---
         if action_type == "ack":
