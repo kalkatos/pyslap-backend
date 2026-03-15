@@ -8,6 +8,50 @@ Features already done are marked with ✅DONE
 
 ---
 
+## 🛠️ Infrastructure & Stability Fixes
+
+### 5. Atomic Distributed Locking
+*   **Description**: Fix the `_try_acquire_loop_lock` create-race where multiple instances can claim the same lock simultaneously.
+*   **Changes**:
+    *   Update `DatabaseInterface.create` to support a `fail_if_exists` parameter.
+    *   Modify `PySlapEngine._try_acquire_loop_lock` to use this flag during lock creation.
+*   **Testing**: Run stress tests with multiple concurrent `process_update_loop` calls for the same session; verify only one succeeds in entering the execution block.
+
+### 6. Database Transaction Support
+*   **Description**: Ensure that updates involving multiple records (e.g., Session and GameState) are atomic.
+*   **Changes**:
+    *   Add `start_transaction`, `commit`, and `rollback` methods to `DatabaseInterface`.
+    *   Update `PySlapEngine.create_session` and `_execute_update_loop` to wrap multi-collection updates in transactions.
+*   **Testing**: Simulate a crash/failure between the Session and State update; verify that neither record is updated (rollback).
+
+### 7. Scalable Matchmaking
+*   **Description**: Prevent database "thundering herd" load when many players attempt to join the same matchmaking sessions.
+*   **Changes**:
+    *   Implement a "CLAIMED" status for sessions or a separate matchmaking queue.
+    *   Modify `create_session` to use a more efficient lookup and lock mechanism for joining sessions.
+*   **Testing**: Use a load-testing script to simulate 100+ players joining simultaneously; verify database query counts remain linear rather than exponential.
+
+### 8. Atomic Player Rate Limiting
+*   **Description**: Prevent players from bypassing rate limits by sending multiple concurrent actions.
+*   **Changes**:
+    *   Refactor `Validator.validate_action_rate` and `record_action_rate` into a single atomic database operation (e.g., using `UPDATE ... WHERE last_action < current - gap`).
+*   **Testing**: Send 10 identical move actions at the same microsecond; verify only one is accepted.
+
+### 9. Batch Maintenance Operations
+*   **Description**: Optimize `cleanup_old_records` to handle large volumes of expired sessions without blocking.
+*   **Changes**:
+    *   Replace sequential per-session loops with batch delete operations using `db.delete_by_filter`.
+*   **Testing**: Populate the DB with 10,000 expired sessions and verify cleanup completes in seconds rather than minutes.
+
+### 10. Security Hardening
+*   **Description**: Reduce the exploit surface of debugging tools and session tokens.
+*   **Changes**:
+    *   Move `create_debug_external_token` to a separate `test_utils.py` not included in production builds.
+    *   Implement `SESSION_TOKEN_TTL` in `settings.py` (default to 1 hour).
+*   **Testing**: Verify `create_debug_external_token` is inaccessible in the core engine; verify session tokens expire after the configured TTL.
+
+---
+
 ## ✨ Feature Improvements
 
 ### 1. Spectator Mode
