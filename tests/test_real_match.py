@@ -4,9 +4,8 @@ import pytest
 import uvicorn
 import httpx
 import asyncio
-import jwt
 from local.app import app, db
-from pyslap.core.security import SecurityManager
+from games.rps_client import run_client
 
 # Setup basic config for tests
 def setup_game_config():
@@ -39,7 +38,6 @@ def server_process():
     while time.time() - start_time < 5:
         try:
             with httpx.Client() as client:
-                # Just any endpoint to check if up
                 client.get("http://127.0.0.1:8000/docs")
                 break
         except Exception:
@@ -52,105 +50,64 @@ def server_process():
     proc.terminate()
     proc.join()
 
-async def player_join(client: httpx.AsyncClient, player_id: str):
-    """Simulates a player joining matchmaking."""
-    # Create debug token
-    token = jwt.encode(
-        {"player_id": player_id, "name": f"TestPlayer_{player_id}", "exp": time.time() + 3600},
-        "pyslap_default_external_secret_32_bytes_min",
-        algorithm="HS256"
-    )
-    
-    resp = await client.post("http://127.0.0.1:8000/session", json={
-        "game_id": "rps",
-        "auth_token": token,
-        "custom_data": {"matchmaking": True}
-    })
-    assert resp.status_code == 200
-    return resp.json()
-
-async def play_game(player_id: str, session_id: str, player_token: str, moves: list[str]):
-    """Simulates a player playing through a list of moves."""
-    move_idx = 0
-    client_nonce = 0
-    last_version = -1
-    
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        while True:
-            # Poll for state
-            resp = await client.get("http://127.0.0.1:8000/state", params={
-                "session_id": session_id,
-                "player_id": player_id,
-                "token": player_token
-            })
-            assert resp.status_code == 200
-            state = resp.json()
-            
-            curr_version = state.get("state_version", 0)
-            if curr_version == last_version:
-                await asyncio.sleep(0.1)
-                continue
-            
-            last_version = curr_version
-            ps = state["public_state"]
-            phase = ps.get("phase")
-            
-            if phase == "waiting_for_move":
-                if move_idx < len(moves):
-                    client_nonce += 1
-                    move_resp = await client.post("http://127.0.0.1:8000/action", json={
-                        "session_id": session_id,
-                        "player_id": player_id,
-                        "token": player_token,
-                        "action_type": "move",
-                        "payload": {"choice": moves[move_idx]},
-                        "nonce": client_nonce
-                    })
-                    assert move_resp.status_code == 200
-                    move_idx += 1
-            
-            elif phase == "round_complete":
-                # Acknowledge gated phase
-                ack_resp = await client.post("http://127.0.0.1:8000/action", json={
-                    "session_id": session_id,
-                    "player_id": player_id,
-                    "token": player_token,
-                    "action_type": "ack",
-                    "payload": {},
-                    "nonce": 0
-                })
-                # Engine might have already transitioned if other player acked first
-                # so we don't strictly assert 200 here if it's already past the phase
-            
-            elif phase == "game_over":
-                return state
-            
-            await asyncio.sleep(0.1)
+async def mock_input(prompt, phase, round_num, moves):
+    """Injected input function for rps_client."""
+    if phase == "waiting_for_move":
+        # round_num is 1-indexed
+        idx = round_num - 1
+        if idx < len(moves):
+            return moves[idx]
+    return "<timeout>"
 
 @pytest.mark.anyio
 async def test_full_rps_match (server_process):
-    """The main E2E test running two players through a full match."""
-    async with httpx.AsyncClient() as client:
-        # 1. Players join
-        p1_res = await player_join(client, "p1")
-        p2_res = await player_join(client, "p2")
-        
-        session_id = p1_res["session_id"]
-        assert p2_res["session_id"] == session_id
-        
-        # 2. Run both players concurrently
-        # Moves: 
-        # Round 1: P1=R, P2=S -> P1 wins
-        # Round 2: P1=R, P2=S -> P1 wins
-        # Result: P1 wins 2-0
-        p1_task = asyncio.create_task(play_game("p1", session_id, p1_res["token"], ["R", "R"]))
-        p2_task = asyncio.create_task(play_game("p2", session_id, p2_res["token"], ["S", "S"]))
-        
-        p1_final, p2_final = await asyncio.gather(p1_task, p2_task)
-        
-        # 3. Assert match result
-        final_public = p1_final["public_state"]
-        assert final_public["phase"] == "game_over"
-        assert final_public["winner"] == "p1"
-        assert final_public["p1_score"] == 2
-        assert final_public["p2_score"] == 0
+    """The main E2E test running two players through a full match using rps_client.py."""
+    
+    # Player 1: Wins with Rock twice
+    p1_config = {
+        "base_url": "http://127.0.0.1:8000",
+        "player_id": "test_p1",
+        "game_id": "rps",
+        "matchmaking": True
+    }
+    p1_moves = ["R", "R"]
+    
+    # Player 2: Loses with Scissors twice
+    p2_config = {
+        "base_url": "http://127.0.0.1:8000",
+        "player_id": "test_p2",
+        "game_id": "rps",
+        "matchmaking": True
+    }
+    p2_moves = ["S", "S"]
+
+    # Start P1 first to ensure they are the session creator (role 'p1')
+    p1_task = asyncio.create_task(run_client(p1_config, input_func=lambda p, ph, r: mock_input(p, ph, r, p1_moves)))
+    
+    # Small delay to ensure P1 is registered as the first player
+    await asyncio.sleep(1.0)
+    
+    p2_task = asyncio.create_task(run_client(p2_config, input_func=lambda p, ph, r: mock_input(p, ph, r, p2_moves)))
+    
+    p1_final, p2_final = await asyncio.gather(p1_task, p2_task)
+    
+    assert p1_final is not None, "Player 1 should have finished the game"
+    assert p2_final is not None, "Player 2 should have finished the game"
+    
+    # Assert match result (P1 wins 2-0)
+    final_public = p1_final["public_state"]
+    assert final_public["phase"] == "game_over"
+    
+    # Verify scores from P1's perspective
+    p1_private = p1_final["private_state"]
+    assert p1_private["my_score"] == 2
+    assert p1_private["opponent_score"] == 0
+    
+    # Verify scores from P2's perspective
+    p2_private = p2_final["private_state"]
+    assert p2_private["my_score"] == 0
+    assert p2_private["opponent_score"] == 2
+    
+    # The winner string might be 'p1' or 'p2' depending on exact join order 
+    # but based on our sleep it should be 'p1'. 
+    # We assert based on scores which is more fundamental.
