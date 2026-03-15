@@ -153,31 +153,39 @@ class PySlapEngine:
                     updated_session_data = asdict(session)
                     updated_session_data["id"] = s_id
 
-                    # CAS write -- fails if another player joined first
-                    if not self.db.update("sessions", s_id, updated_session_data,
-                                        expected_version=current_version):
-                        break  # CAS failed, retry outer loop with fresh query
+                    self.db.start_transaction()
+                    try:
+                        # CAS write -- fails if another player joined first
+                        if not self.db.update("sessions", s_id, updated_session_data,
+                                            expected_version=current_version):
+                            self.db.rollback()
+                            break  # CAS failed, retry outer loop with fresh query
 
-                    # CAS succeeded -- safe to update state
-                    # Snapshot state before game-rules touch it
-                    original_public = copy.deepcopy(state.public_state)
-                    original_private = copy.deepcopy(state.private_state)
-                    original_phase = state.public_state.get("phase")
+                        # CAS succeeded -- safe to update state
+                        # Snapshot state before game-rules touch it
+                        original_public = copy.deepcopy(state.public_state)
+                        original_private = copy.deepcopy(state.private_state)
+                        original_phase = state.public_state.get("phase")
 
-                    state = self.games[game_id].setup_player_state(state, player)
+                        state = self.games[game_id].setup_player_state(state, player)
 
-                    # Bump version on any state mutation (granular versioning)
-                    if state.public_state != original_public or state.private_state != original_private:
-                        state.state_version += 1
-                    # Reset acks only on phase transitions (gated phases)
-                    new_phase = state.public_state.get("phase")
-                    if new_phase != original_phase:
-                        state.phase_ack = {p: False for p in session.players.keys()}
-                        state.phase_ack_since = time.time()
+                        # Bump version on any state mutation (granular versioning)
+                        if state.public_state != original_public or state.private_state != original_private:
+                            state.state_version += 1
+                        # Reset acks only on phase transitions (gated phases)
+                        new_phase = state.public_state.get("phase")
+                        if new_phase != original_phase:
+                            state.phase_ack = {p: False for p in session.players.keys()}
+                            state.phase_ack_since = time.time()
 
-                    updated_state_data = asdict(state)
-                    updated_state_data["id"] = s_id
-                    self.db.update("states", s_id, updated_state_data)
+                        updated_state_data = asdict(state)
+                        updated_state_data["id"] = s_id
+                        self.db.update("states", s_id, updated_state_data)
+                        
+                        self.db.commit()
+                    except Exception:
+                        self.db.rollback()
+                        raise
 
                     client_state = state.to_player_state(player.player_id)
                     return {"session_id": s_id, "token": player.token, "state": client_state, "lobby_id": session.lobby_id}
@@ -238,8 +246,14 @@ class PySlapEngine:
         state_data = asdict(game_state)
         state_data["id"] = session_id
 
-        self.db.create("sessions", session_data)
-        self.db.create("states", state_data)
+        self.db.start_transaction()
+        try:
+            self.db.create("sessions", session_data)
+            self.db.create("states", state_data)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
         # Schedule the first update loop using the interface
         self.scheduler.schedule_next_update(session_id, config.update_interval_ms)
@@ -474,108 +488,115 @@ class PySlapEngine:
         )
 
         # 4. Apply Updates
+        self.db.start_transaction()
+        try:
+            # Create deterministic RNG from saved seed
+            rng = random.Random(state.random_seed)
 
-        # Create deterministic RNG from saved seed
-        rng = random.Random(state.random_seed)
+            # Snapshot state for granular version bumping
+            original_phase = state.public_state.get("phase")
+            original_public = copy.deepcopy(state.public_state)
+            original_private = copy.deepcopy(state.private_state)
 
-        # Snapshot state for granular version bumping
-        original_phase = state.public_state.get("phase")
-        original_public = copy.deepcopy(state.public_state)
-        original_private = copy.deepcopy(state.private_state)
+            # Phase Gate Check
+            gated_phases = rules.get_phase_gates()
+            current_phase = state.public_state.get("phase")
+            skip_tick = False
 
-        # Phase Gate Check
-        gated_phases = rules.get_phase_gates()
-        current_phase = state.public_state.get("phase")
-        skip_tick = False
+            if current_phase in gated_phases:
+                # Check if all actual players (excluding AI added later) have acked
+                session_players = set([p for p in session.players.keys()])
+                unacked_players = [
+                    p for p in session_players if not state.phase_ack.get(p, False)
+                ]
 
-        if current_phase in gated_phases:
-            # Check if all actual players (excluding AI added later) have acked
-            session_players = set([p for p in session.players.keys()])
-            unacked_players = [
-                p for p in session_players if not state.phase_ack.get(p, False)
-            ]
+                if unacked_players:
+                    # Check for timeout
+                    if current_time - state.phase_ack_since >= config.phase_ack_timeout_sec:
+                        # Force-clear the gate
+                        pass  # We proceed with the tick
+                    else:
+                        skip_tick = True
 
-            if unacked_players:
-                # Check for timeout
-                if current_time - state.phase_ack_since >= config.phase_ack_timeout_sec:
-                    # Force-clear the gate
-                    pass  # We proceed with the tick
+            # First, apply regular time-based updates (if any) and not gated
+            if not skip_tick:
+                # Calculate real elapsed time based on database-stored timestamps
+                if state.last_update_timestamp > 0:
+                    raw_delta_ms = int((current_time - state.last_update_timestamp) * 1000)
                 else:
-                    skip_tick = True
+                    # First tick after creation: no meaningful game time has elapsed
+                    raw_delta_ms = 0
 
-        # First, apply regular time-based updates (if any) and not gated
-        if not skip_tick:
-            # Calculate real elapsed time based on database-stored timestamps
-            if state.last_update_timestamp > 0:
-                raw_delta_ms = int((current_time - state.last_update_timestamp) * 1000)
-            else:
-                # First tick after creation: no meaningful game time has elapsed
-                raw_delta_ms = 0
+                # Clamp to prevent spikes from serverless cold starts or scheduling delays.
+                # Uses 3x the configured interval as ceiling (minimum cap of 2000ms).
+                max_delta = max(config.update_interval_ms * 3, 2000) if config.update_interval_ms > 0 else 2000
+                delta_ms = max(0, min(raw_delta_ms, max_delta))
 
-            # Clamp to prevent spikes from serverless cold starts or scheduling delays.
-            # Uses 3x the configured interval as ceiling (minimum cap of 2000ms).
-            max_delta = max(config.update_interval_ms * 3, 2000) if config.update_interval_ms > 0 else 2000
-            delta_ms = max(0, min(raw_delta_ms, max_delta))
+                state = rules.apply_update_tick(state, delta_ms, rng)
 
-            state = rules.apply_update_tick(state, delta_ms, rng)
+            # Always advance the timestamp — even during skipped (gated) ticks —
+            # so that delta_ms doesn't spike when the gate clears.
+            state.last_update_timestamp = current_time
 
-        # Always advance the timestamp — even during skipped (gated) ticks —
-        # so that delta_ms doesn't spike when the gate clears.
-        state.last_update_timestamp = current_time
+            # Second, apply valid player actions
+            for raw_act in pending_actions:
+                action = Action(
+                    session_id=session_id,
+                    player_id=raw_act["player_id"],
+                    action_type=raw_act["action_type"],
+                    payload=raw_act["payload"],
+                    timestamp=raw_act["timestamp"],
+                    nonce=raw_act.get("nonce", 0)
+                )
 
-        # Second, apply valid player actions
-        for raw_act in pending_actions:
-            action = Action(
-                session_id=session_id,
-                player_id=raw_act["player_id"],
-                action_type=raw_act["action_type"],
-                payload=raw_act["payload"],
-                timestamp=raw_act["timestamp"],
-                nonce=raw_act.get("nonce", 0)
-            )
+                # Check nonce before applying
+                if self.validator.validate_action_nonce(state, action.player_id, action.nonce):
+                    if rules.validate_action(action, state):
+                        state = rules.apply_action(action, state, rng)
+                        # Update local state nonce to prevent replays
+                        state.last_nonces[action.player_id] = action.nonce
 
-            # Check nonce before applying
-            if self.validator.validate_action_nonce(state, action.player_id, action.nonce):
-                if rules.validate_action(action, state):
-                    state = rules.apply_action(action, state, rng)
-                    # Update local state nonce to prevent replays
-                    state.last_nonces[action.player_id] = action.nonce
+                # Mark action as processed
+                raw_act["processed"] = True
+                self.db.update("actions", raw_act["id"], raw_act)
 
-            # Mark action as processed
-            raw_act["processed"] = True
-            self.db.update("actions", raw_act["id"], raw_act)
+            # Granular versioning: bump on ANY state mutation so clients detect every change.
+            if state.public_state != original_public or state.private_state != original_private:
+                state.state_version += 1
 
-        # Granular versioning: bump on ANY state mutation so clients detect every change.
-        if state.public_state != original_public or state.private_state != original_private:
-            state.state_version += 1
+            # Reset acks only on phase transitions (gated phases still need this).
+            new_phase = state.public_state.get("phase")
+            if new_phase != original_phase:
+                state.phase_ack = {p: False for p in session.players.keys()}
+                state.phase_ack_since = current_time
 
-        # Reset acks only on phase transitions (gated phases still need this).
-        new_phase = state.public_state.get("phase")
-        if new_phase != original_phase:
-            state.phase_ack = {p: False for p in session.players.keys()}
-            state.phase_ack_since = current_time
+            # 5. Check Game Over
+            if rules.check_game_over(state):
+                state.is_game_over = True
+                session.status = SessionStatus.TERMINATED
 
-        # 5. Check Game Over
-        if rules.check_game_over(state):
-            state.is_game_over = True
-            session.status = SessionStatus.TERMINATED
+                session_data = asdict(session)
+                session_data["id"] = session_id
+                state_data = asdict(state)
+                state_data["id"] = session_id
 
-            session_data = asdict(session)
-            session_data["id"] = session_id
+                self.db.update("sessions", session_id, session_data)
+                self.db.update("states", session_id, state_data)
+                self.db.commit()
+                return  # Exit loop
+
+            # 6. Save State and Reschedule
+            # Always save to persist last_update_timestamp (prevents delta spikes
+            # after gated phases) and the advanced random seed.
+            state.random_seed = rng.randint(0, 2**63 - 1)
             state_data = asdict(state)
             state_data["id"] = session_id
-
-            self.db.update("sessions", session_id, session_data)
             self.db.update("states", session_id, state_data)
-            return  # Exit loop
-
-        # 6. Save State and Reschedule
-        # Always save to persist last_update_timestamp (prevents delta spikes
-        # after gated phases) and the advanced random seed.
-        state.random_seed = rng.randint(0, 2**63 - 1)
-        state_data = asdict(state)
-        state_data["id"] = session_id
-        self.db.update("states", session_id, state_data)
+            
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
         # Enforce serverless minimum interval requirement (>=500ms)
         delay_ms = max(config.update_interval_ms, self.MINIMUM_UPDATE_INTERVAL_MS)

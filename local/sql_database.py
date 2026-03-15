@@ -19,7 +19,8 @@ class SQLiteDatabase(DatabaseInterface):
         self.db_path = db_path
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._in_transaction = False
         self._init_db()
 
     def _get_connection (self):
@@ -38,6 +39,29 @@ class SQLiteDatabase(DatabaseInterface):
     def _init_db (self):
         """No generic tables to initialize upfront."""
         pass
+
+    def start_transaction (self) -> None:
+        self._lock.acquire()
+        self._in_transaction = True
+        self._conn.execute("BEGIN TRANSACTION")
+
+    def commit (self) -> None:
+        if not self._in_transaction:
+            return
+        try:
+            self._conn.commit()
+        finally:
+            self._in_transaction = False
+            self._lock.release()
+
+    def rollback (self) -> None:
+        if not self._in_transaction:
+            return
+        try:
+            self._conn.rollback()
+        finally:
+            self._in_transaction = False
+            self._lock.release()
 
     def dispose (self):
         self._conn.close()
@@ -66,7 +90,8 @@ class SQLiteDatabase(DatabaseInterface):
                         f'{insert_sql} "{collection}" (record_id, timestamp, data) VALUES (?, ?, ?)',
                         (record_id, time.time(), json.dumps(data)),
                     )
-                    conn.commit()
+                    if not self._in_transaction:
+                        conn.commit()
                     return record_id
                 except sqlite3.IntegrityError:
                     # fail_if_exists=True and a record with this id already exists
@@ -113,7 +138,8 @@ class SQLiteDatabase(DatabaseInterface):
                     (time.time(), json.dumps(data), record_id),
                 )
             
-            conn.commit()
+            if not self._in_transaction:
+                conn.commit()
             return cursor.rowcount > 0
 
     def delete (self, collection: str, record_id: str) -> bool:
@@ -125,7 +151,8 @@ class SQLiteDatabase(DatabaseInterface):
             cursor = conn.execute(
                 f'DELETE FROM "{collection}" WHERE record_id = ?', (record_id,)
             )
-            conn.commit()
+            if not self._in_transaction:
+                conn.commit()
             return cursor.rowcount > 0
 
     # Operator suffixes supported by delete_by_filter and _build_filter_clauses
@@ -177,7 +204,8 @@ class SQLiteDatabase(DatabaseInterface):
                 conn.execute(
                     f'DELETE FROM "{collection}"{where_sql}', params
                 )
-                conn.commit()
+                if not self._in_transaction:
+                    conn.commit()
 
         return deleted
 

@@ -63,8 +63,10 @@ def _make_mock_db (session_id="sid_1", game_id="dummy", current_time=None):
             }
         return None
 
-    def mock_create (coll, data):
+    def mock_create (coll, data, fail_if_exists=False):
         if coll == "locks":
+            if fail_if_exists and data["id"] in locks:
+                return None
             locks[data["id"]] = dict(data)
         return data.get("id", "mock_id")
 

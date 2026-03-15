@@ -61,6 +61,29 @@ class DatabaseInterface(ABC):
         pass
 
     @abstractmethod
+    def start_transaction (self) -> None:
+        """
+        Starts a new database transaction.
+        Subsequent create/read/update/delete operations should be atomic
+        until commit() or rollback() is called.
+        """
+        pass
+
+    @abstractmethod
+    def commit (self) -> None:
+        """
+        Finalizes the current transaction, persisting all changes made.
+        """
+        pass
+
+    @abstractmethod
+    def rollback (self) -> None:
+        """
+        Reverts all changes made during the current transaction.
+        """
+        pass
+
+    @abstractmethod
     def delete_by_filter (self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
         """
         Deletes all records matching the provided filters and returns the

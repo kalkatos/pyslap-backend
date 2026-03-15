@@ -10,14 +10,14 @@ Features already done are marked with ✅DONE
 
 ## 🛠️ Infrastructure & Stability Fixes
 
-### 5. Atomic Distributed Locking
+### ✅DONE 5. Atomic Distributed Locking
 *   **Description**: Fix the `_try_acquire_loop_lock` create-race where multiple instances can claim the same lock simultaneously.
 *   **Changes**:
     *   Update `DatabaseInterface.create` to support a `fail_if_exists` parameter.
     *   Modify `PySlapEngine._try_acquire_loop_lock` to use this flag during lock creation.
 *   **Testing**: Run stress tests with multiple concurrent `process_update_loop` calls for the same session; verify only one succeeds in entering the execution block.
 
-### 6. Database Transaction Support
+### ✅DONE 6. Database Transaction Support
 *   **Description**: Ensure that updates involving multiple records (e.g., Session and GameState) are atomic.
 *   **Changes**:
     *   Add `start_transaction`, `commit`, and `rollback` methods to `DatabaseInterface`.
