@@ -66,9 +66,6 @@ for i, arg in enumerate(sys.argv):
 
 if not matchmaking and not create_lobby and not join_lobby:
     use_bot = True
-elif matchmaking or create_lobby:
-    # In matchmaking mode, auto-play with random moves
-    use_bot = True
 
 player_name = player_id.upper()
 
@@ -190,9 +187,6 @@ async def run_client () -> None:
 
         # ---- game loop ----
         while True:
-            # Add small delay to improve matchmaking stability
-            await asyncio.sleep(0.5)
-
             # Fetch current state
             state = await _get_state(client, session_id, player_id, token)
             if state is None:
@@ -221,26 +215,19 @@ async def run_client () -> None:
                     print(f"\n--- Round {rnd} ---")
                     user_input = "<empty>"
                     choice = ""
-
-                    if use_bot:
-                        # Auto-select a random move in bot mode
-                        import random as py_random
-                        choice = py_random.choice(["R", "P", "S"])
-                        print(f"Auto move: {choice}")
-                    else:
-                        # Interactive mode: wait for user input
-                        while True:
-                            user_input = await _read_input("Enter your move (R/P/S): ", timeout=10.0)
-                            if user_input == "<timeout>":
-                                break
-                            choice = user_input.upper()
-                            if choice in ("R", "P", "S"):
-                                break
-                            print(f"Invalid move '{user_input}'. Please enter R, P, or S.")
-
+                    
+                    while True:
+                        user_input = await _read_input("Enter your move (R/P/S): ", timeout=10.0)
                         if user_input == "<timeout>":
-                            print("\nNo move made within 10 seconds, terminating match.")
                             break
+                        choice = user_input.upper()
+                        if choice in ("R", "P", "S"):
+                            break
+                        print(f"Invalid move '{user_input}'. Please enter R, P, or S.")
+                    
+                    if user_input == "<timeout>":
+                        print("\nNo move made within 10 seconds, terminating match.")
+                        break
 
                     # Send the player's move
                     client_nonce += 1
