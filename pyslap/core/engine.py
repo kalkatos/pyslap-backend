@@ -1,3 +1,4 @@
+import copy
 import random
 import time
 import uuid
@@ -158,15 +159,19 @@ class PySlapEngine:
                         break  # CAS failed, retry outer loop with fresh query
 
                     # CAS succeeded -- safe to update state
-                    # Record phase before game-rules touch it
+                    # Snapshot state before game-rules touch it
+                    original_public = copy.deepcopy(state.public_state)
+                    original_private = copy.deepcopy(state.private_state)
                     original_phase = state.public_state.get("phase")
 
                     state = self.games[game_id].setup_player_state(state, player)
 
-                    # Engine-owned version bump on phase change (mirrors process_update_loop)
+                    # Bump version on any state mutation (granular versioning)
+                    if state.public_state != original_public or state.private_state != original_private:
+                        state.state_version += 1
+                    # Reset acks only on phase transitions (gated phases)
                     new_phase = state.public_state.get("phase")
                     if new_phase != original_phase:
-                        state.state_version += 1
                         state.phase_ack = {p: False for p in session.players.keys()}
                         state.phase_ack_since = time.time()
 
@@ -476,8 +481,10 @@ class PySlapEngine:
         # Create deterministic RNG from saved seed
         rng = random.Random(state.random_seed)
 
-        # Track phase for version bumping
+        # Snapshot state for granular version bumping
         original_phase = state.public_state.get("phase")
+        original_public = copy.deepcopy(state.public_state)
+        original_private = copy.deepcopy(state.private_state)
 
         # Phase Gate Check
         gated_phases = rules.get_phase_gates()
@@ -541,13 +548,13 @@ class PySlapEngine:
             raw_act["processed"] = True
             self.db.update("actions", raw_act["id"], raw_act)
 
-        # Version Bump & Ack Reset only when the phase changed.
-        # Partial actions (e.g. one of two players moved) and internal timer changes
-        # do NOT bump the version — only a phase transition does.
+        # Granular versioning: bump on ANY state mutation so clients detect every change.
+        if state.public_state != original_public or state.private_state != original_private:
+            state.state_version += 1
+
+        # Reset acks only on phase transitions (gated phases still need this).
         new_phase = state.public_state.get("phase")
         if new_phase != original_phase:
-            state.state_version += 1
-            # Reset acks for session players
             state.phase_ack = {p: False for p in session.players.keys()}
             state.phase_ack_since = current_time
 

@@ -109,7 +109,7 @@ Features already done are marked with ✅DONE
 *   **Description**: Ensure lobby ID generation is idempotent and free of global side-effects, facilitating testability and consistency across serverless retries.
 *   **Changes**: Replace global `random.choice` in `PySlapEngine.create_session` with a local `random.Random` instance seeded by the requester's `player_id` or other deterministic inputs.
 
-### 19. Granular State Versioning
+### ✅DONE 19. Granular State Versioning
 *   **Description**: Ensure clients detect every meaningful change to the game state, preventing "lost updates" and keeping the UI in sync even during internal logic changes.
 *   **Changes**: Update the engine to increment `state_version` on every state-mutating action successfully processed or on any logic tick that modifies public state, even if no phase transition occurs.
 
