@@ -376,19 +376,16 @@ class PySlapEngine:
         existing = self.db.read("locks", lock_id)
 
         if existing is None:
-            # No lock exists — create one and claim it.
-            # NOTE: For production distributed databases, the create method
-            # should support conditional insertion (e.g., DynamoDB
-            # attribute_not_exists) to prevent a narrow create-race.
-            # The local SQLite implementation is protected by its thread lock.
-            self.db.create("locks", {
+            # No lock exists — attempt atomic creation. fail_if_exists=True ensures
+            # that if two callers race here, only one succeeds; the other gets None.
+            created = self.db.create("locks", {
                 "id": lock_id,
                 "session_id": session_id,
                 "holder_id": holder_id,
                 "expires_at": now + lease_sec,
                 "version": 0,
-            })
-            return True
+            }, fail_if_exists=True)
+            return created is not None
 
         # Lock exists and is still valid — another instance holds it.
         if existing.get("expires_at", 0) > now:

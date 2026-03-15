@@ -46,11 +46,13 @@ class SQLiteDatabase(DatabaseInterface):
         except OSError:
             pass
 
-    def create (self, collection: str, data: dict[str, Any]) -> str:
+    def create (self, collection: str, data: dict[str, Any], fail_if_exists: bool = False) -> Optional[str]:
         # Use an existing id if provided, otherwise generate a new one
         record_id = data.get("id", str(uuid.uuid4()))
         if "id" not in data:
             data["id"] = record_id
+
+        insert_sql = 'INSERT INTO' if fail_if_exists else 'INSERT OR REPLACE INTO'
 
         with self._lock:
             conn = self._get_connection()
@@ -61,11 +63,14 @@ class SQLiteDatabase(DatabaseInterface):
                         f'CREATE TABLE IF NOT EXISTS "{collection}" (record_id TEXT PRIMARY KEY, timestamp REAL, data TEXT)'
                     )
                     conn.execute(
-                        f'INSERT OR REPLACE INTO "{collection}" (record_id, timestamp, data) VALUES (?, ?, ?)',
+                        f'{insert_sql} "{collection}" (record_id, timestamp, data) VALUES (?, ?, ?)',
                         (record_id, time.time(), json.dumps(data)),
                     )
                     conn.commit()
-                    break
+                    return record_id
+                except sqlite3.IntegrityError:
+                    # fail_if_exists=True and a record with this id already exists
+                    return None
                 except sqlite3.OperationalError as e:
                     if "locked" in str(e).lower():
                         time.sleep(0.05)

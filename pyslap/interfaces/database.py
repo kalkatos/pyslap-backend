@@ -10,10 +10,11 @@ class DatabaseInterface(ABC):
     """
 
     @abstractmethod
-    def create(self, collection: str, data: dict[str, Any]) -> str:
+    def create(self, collection: str, data: dict[str, Any], fail_if_exists: bool = False) -> Optional[str]:
         """
         Creates a new record in the specified collection.
-        Returns the unique identifier of the created record.
+        Returns the unique identifier of the created record, or None if
+        fail_if_exists=True and a record with the same 'id' already exists.
         """
         pass
 
