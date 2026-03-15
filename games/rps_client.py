@@ -93,11 +93,15 @@ async def _start_session (client: httpx.AsyncClient, game_id: str, auth_token: s
 
 
 async def _get_state (client: httpx.AsyncClient, session_id: str, player_id: str, token: str) -> dict[str, Any] | None:
-    resp = await client.get(f"{base_url}/state", params={
-        "session_id": session_id,
-        "player_id": player_id,
-        "token": token,
-    })
+    try:
+        resp = await client.get(f"{base_url}/state", params={
+            "session_id": session_id,
+            "player_id": player_id,
+            "token": token,
+        })
+    except (httpx.ReadTimeout, httpx.ConnectError, httpx.RemoteProtocolError) as e:
+        print(f"\n[Warning] Network error getting state: {e}")
+        return None
     if resp.status_code != 200:
         try:
             err_msg = resp.json().get("detail", f"Error: {resp.status_code} - {resp.text}")
@@ -109,14 +113,18 @@ async def _get_state (client: httpx.AsyncClient, session_id: str, player_id: str
 
 
 async def _send_action (client: httpx.AsyncClient, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any], nonce: int) -> bool:
-    resp = await client.post(f"{base_url}/action", json={
-        "session_id": session_id,
-        "player_id": player_id,
-        "token": token,
-        "action_type": action_type,
-        "payload": payload,
-        "nonce": nonce,
-    })
+    try:
+        resp = await client.post(f"{base_url}/action", json={
+            "session_id": session_id,
+            "player_id": player_id,
+            "token": token,
+            "action_type": action_type,
+            "payload": payload,
+            "nonce": nonce,
+        })
+    except (httpx.ReadTimeout, httpx.ConnectError, httpx.RemoteProtocolError) as e:
+        print(f"\n[Warning] Network error sending action: {e}")
+        return False
     if resp.status_code != 200:
         try:
             err_msg = resp.json().get("detail", f"Error: {resp.status_code} - {resp.text}")
@@ -138,7 +146,10 @@ async def _read_input (prompt: str, timeout: float) -> str:
     try:
         future = loop.run_in_executor(None, sys.stdin.readline)
         result = await asyncio.wait_for(future, timeout=timeout)
-        return result.strip()
+        stripped = result.strip()
+        if stripped == "":  # EOF on a closed pipe
+            return "<timeout>"
+        return stripped
     except asyncio.TimeoutError:
         return "<timeout>"
 
@@ -148,7 +159,7 @@ async def _read_input (prompt: str, timeout: float) -> str:
 # ---------------------------------------------------------------------------
 
 async def run_client () -> None:
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         # ---- create session ----
         custom_data: dict[str, Any] = {"use_bot": use_bot}
         if matchmaking:
