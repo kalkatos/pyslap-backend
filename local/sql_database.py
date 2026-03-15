@@ -144,8 +144,11 @@ class SQLiteDatabase(DatabaseInterface):
                     field = key[: -len(suffix)]
                     break
 
-            clauses.append(f'json_extract(data, "$.{field}") {sql_op} ?')
-            params.append(value)
+            if value is None:
+                clauses.append(f'json_extract(data, "$.{field}") IS NULL')
+            else:
+                clauses.append(f'json_extract(data, "$.{field}") {sql_op} ?')
+                params.append(value)
 
         where_sql = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         return where_sql, params
