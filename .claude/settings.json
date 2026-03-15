@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python -m uvicorn local.app:app --reload --port 8000)",
+      "Bash(.venv/Scripts/python games/rps_client.py --port 8000 -m)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_matchmaking.py -v)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_rps.py -v)",
+      "Bash(.venv/Scripts/python test_mm.py)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(.venv/Scripts/python test_e2e.py)",
+      "Bash(git checkout:*)"
+    ]
+  }
+}
