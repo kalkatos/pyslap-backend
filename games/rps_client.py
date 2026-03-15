@@ -184,6 +184,7 @@ async def run_client () -> None:
 
         last_state_version = -1
         client_nonce = 0
+        move_submitted = False
 
         # ---- game loop ----
         while True:
@@ -197,7 +198,7 @@ async def run_client () -> None:
             if current_version == last_state_version:
                 await asyncio.sleep(0.25)
                 continue
-                
+
             last_state_version = current_version
 
             ps = state["public_state"]
@@ -209,13 +210,18 @@ async def run_client () -> None:
                     last_state_version = -1  # keep printing periodically? No, only prints on version bump
                     # To avoid spamming, we just let it sleep
                     await asyncio.sleep(1.0)
-                    
+
                 case "waiting_for_move":
+                    if move_submitted:
+                        # Move already sent this round; wait silently for opponent
+                        await asyncio.sleep(0.25)
+                        continue
+
                     rnd = ps.get("round", "?")
                     print(f"\n--- Round {rnd} ---")
                     user_input = "<empty>"
                     choice = ""
-                    
+
                     while True:
                         user_input = await _read_input("Enter your move (R/P/S): ", timeout=10.0)
                         if user_input == "<timeout>":
@@ -224,14 +230,14 @@ async def run_client () -> None:
                         if choice in ("R", "P", "S"):
                             break
                         print(f"Invalid move '{user_input}'. Please enter R, P, or S.")
-                    
+
                     if user_input == "<timeout>":
                         print("\nNo move made within 10 seconds, terminating match.")
                         break
 
                     # Send the player's move
                     client_nonce += 1
-                    await _send_action(
+                    ok = await _send_action(
                         client,
                         session_id=session_id,
                         player_id=player_id,
@@ -240,8 +246,12 @@ async def run_client () -> None:
                         payload={"choice": choice},
                         nonce=client_nonce,
                     )
+                    if ok:
+                        move_submitted = True
+                        print("Waiting for opponent's move...")
 
                 case "round_complete":
+                    move_submitted = False
                     move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
 
                     private_state = state.get("private_state", {})
@@ -276,6 +286,7 @@ async def run_client () -> None:
                     )
 
                 case "game_over":
+                    move_submitted = False
                     move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
                     private_state = state.get("private_state", {})
                     my_raw = private_state.get("my_choice")
