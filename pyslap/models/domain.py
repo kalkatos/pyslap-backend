@@ -8,6 +8,7 @@ class SessionStatus(str, Enum):
     INACTIVE = "inactive"
     TERMINATED = "terminated"
     MATCHMAKING = "matchmaking"
+    CLAIMED = "claimed"
 
 
 class Role(str, Enum):

@@ -104,7 +104,7 @@ class PySlapEngine:
         # Fetch Game Configurations
         config_data = self.db.read("game_configs", game_id) or {}
         config_data.pop("id", None)
-        config = GameConfig(game_id=game_id, **config_data)
+        config = GameConfig(**config_data)
 
         # Handle Matchmaking Wait-and-Join
         if custom_data and custom_data.get("matchmaking"):
@@ -127,68 +127,97 @@ class PySlapEngine:
                     if player.player_id in session.players:
                         continue  # Player is already in this session
 
-                    # Capture version before mutation
+                    # 1. ATOMIC CLAIM: Try to reserve this session by switching status to CLAIMED.
+                    # This prevents other concurrent callers from even trying to join this specific record.
+                    original_status = session.status
+                    current_version = session.version
+                    
+                    claim_session = copy.deepcopy(session)
+                    claim_session.status = SessionStatus.CLAIMED
+                    claim_session.version = current_version + 1
+                    
+                    claim_data = asdict(claim_session)
+                    claim_data["id"] = s_id
+                    
+                    if not self.db.update("sessions", s_id, claim_data, expected_version=current_version):
+                        continue # Failed to claim, somebody else got it or version moved. Try next candidate.
+
+                    # 2. JOIN LOGIC: We now "own" the session's join process for this tick.
+                    session = claim_session # Continue with the claimed session
                     current_version = session.version
 
-                    player.token = self.security.generate_session_token(player.player_id, s_id, role)
-                    session.players[player.player_id] = player
-
-                    state_data = self.db.read("states", s_id)
-                    if not state_data:
-                        continue
-                    state_data.pop("id", None)
-                    state = GameState(**state_data)
-
-                    # Assign sticky slot if not already assigned
-                    if player.player_id not in state.slots.values():
-                        slot_id = f"slot_{len(state.slots)}"
-                        state.slots[slot_id] = player.player_id
-
-                    if len(session.players) >= config.max_players:
-                        session.status = SessionStatus.ACTIVE
-
-                    # Bump version for CAS
-                    session.version = current_version + 1
-
-                    updated_session_data = asdict(session)
-                    updated_session_data["id"] = s_id
-
-                    self.db.start_transaction()
                     try:
-                        # CAS write -- fails if another player joined first
-                        if not self.db.update("sessions", s_id, updated_session_data,
-                                            expected_version=current_version):
+                        player.token = self.security.generate_session_token(player.player_id, s_id, role)
+                        session.players[player.player_id] = player
+
+                        state_data = self.db.read("states", s_id)
+                        if not state_data:
+                            # If state is missing, rollback claim and skip
+                            session.status = original_status
+                            session.version += 1
+                            self.db.update("sessions", s_id, asdict(session))
+                            continue
+
+                        state_data.pop("id", None)
+                        state = GameState(**state_data)
+
+                        # Assign sticky slot if not already assigned
+                        if player.player_id not in state.slots.values():
+                            slot_id = f"slot_{len(state.slots)}"
+                            state.slots[slot_id] = player.player_id
+
+                        # Determine next status: ACTIVE if full, otherwise back to MATCHMAKING
+                        if len(session.players) >= config.max_players:
+                            session.status = SessionStatus.ACTIVE
+                        else:
+                            session.status = SessionStatus.MATCHMAKING
+
+                        session.version = current_version + 1
+                        updated_session_data = asdict(session)
+                        updated_session_data["id"] = s_id
+
+                        self.db.start_transaction()
+                        try:
+                            # Final update for session (releases claim via status change)
+                            if not self.db.update("sessions", s_id, updated_session_data,
+                                                expected_version=current_version):
+                                # This shouldn't happen if CLAIMED status is respected, but safety first.
+                                self.db.rollback()
+                                continue
+
+                            # safe to update state
+                            original_public = copy.deepcopy(state.public_state)
+                            original_private = copy.deepcopy(state.private_state)
+                            original_phase = state.public_state.get("phase")
+
+                            state = self.games[game_id].setup_player_state(state, player)
+
+                            if state.public_state != original_public or state.private_state != original_private:
+                                state.state_version += 1
+                            new_phase = state.public_state.get("phase")
+                            if new_phase != original_phase:
+                                state.phase_ack = {p: False for p in session.players.keys()}
+                                state.phase_ack_since = time.time()
+
+                            updated_state_data = asdict(state)
+                            updated_state_data["id"] = s_id
+                            self.db.update("states", s_id, updated_state_data)
+                            
+                            self.db.commit()
+                        except Exception:
                             self.db.rollback()
-                            break  # CAS failed, retry outer loop with fresh query
+                            raise
 
-                        # CAS succeeded -- safe to update state
-                        # Snapshot state before game-rules touch it
-                        original_public = copy.deepcopy(state.public_state)
-                        original_private = copy.deepcopy(state.private_state)
-                        original_phase = state.public_state.get("phase")
-
-                        state = self.games[game_id].setup_player_state(state, player)
-
-                        # Bump version on any state mutation (granular versioning)
-                        if state.public_state != original_public or state.private_state != original_private:
-                            state.state_version += 1
-                        # Reset acks only on phase transitions (gated phases)
-                        new_phase = state.public_state.get("phase")
-                        if new_phase != original_phase:
-                            state.phase_ack = {p: False for p in session.players.keys()}
-                            state.phase_ack_since = time.time()
-
-                        updated_state_data = asdict(state)
-                        updated_state_data["id"] = s_id
-                        self.db.update("states", s_id, updated_state_data)
-                        
-                        self.db.commit()
+                        client_state = state.to_player_state(player.player_id)
+                        return {"session_id": s_id, "token": player.token, "state": client_state, "lobby_id": session.lobby_id}
+                    
                     except Exception:
-                        self.db.rollback()
+                        # If anything fails during join while claimed, we MUST release the claim
+                        # by putting it back to MATCHMAKING (best effort).
+                        session.status = SessionStatus.MATCHMAKING
+                        session.version += 1
+                        self.db.update("sessions", s_id, asdict(session))
                         raise
-
-                    client_state = state.to_player_state(player.player_id)
-                    return {"session_id": s_id, "token": player.token, "state": client_state, "lobby_id": session.lobby_id}
                 else:
                     # Inner for-loop exhausted all candidates without a CAS failure
                     # No point retrying -- fall through to create a new session.
