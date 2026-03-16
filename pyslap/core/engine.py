@@ -334,18 +334,16 @@ class PySlapEngine:
         # Load game config for rate limit threshold
         config_data = self.db.read("game_configs", session.game_id) or {}
         config_data.pop("id", None)
+        config_data.pop("game_id", None)
         config = GameConfig(game_id=session.game_id, **config_data)
 
         # --- Native framework action: ack (exempt from rate limiting) ---
         if action_type == "ack":
             return self._handle_ack(session_id, session, player_id, current_time)
 
-        # Anti-spam check
-        if not self.validator.validate_action_rate(session, player_id, current_time, config.min_action_gap_ms):
+        # Anti-spam check (Atomic: checks AND records in one operation)
+        if not self.validator.check_and_record_rate_limit(session_id, player_id, current_time, config.min_action_gap_ms):
             return False
-
-        # Record rate limit timestamp after passing the check
-        self.validator.record_action_rate(session_id, player_id, current_time)
 
         action = Action(
             session_id=session_id,

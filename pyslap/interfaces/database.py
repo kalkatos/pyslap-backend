@@ -38,6 +38,16 @@ class DatabaseInterface(ABC):
         pass
 
     @abstractmethod
+    def conditional_update (self, collection: str, record_id: str, data: dict[str, Any],
+                           filters: dict[str, Any]) -> bool:
+        """
+        Updates an existing record with new data ONLY if it matches the
+        provided filters. Returns True if the update was successful,
+        False otherwise (including record not found).
+        """
+        pass
+
+    @abstractmethod
     def delete(self, collection: str, record_id: str) -> bool:
         """
         Deletes a record from the specified collection.

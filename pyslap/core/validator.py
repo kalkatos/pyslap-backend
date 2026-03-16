@@ -15,20 +15,47 @@ class Validator:
     def __init__(self, db: DatabaseInterface):
         self.db = db
 
+    def check_and_record_rate_limit (self, session_id: str, player_id: str, current_time: float, min_gap_ms: int = 200) -> bool:
+        """
+        Atomically checks if the player is allowed to perform an action and
+        records the timestamp if successful.
+        
+        Returns True if the action is allowed and recorded, False if blocked.
+        """
+        rate_limit_id = f"{session_id}:{player_id}"
+        record = {
+            "id": rate_limit_id,
+            "session_id": session_id,
+            "player_id": player_id,
+            "last_action_at": current_time,
+        }
+
+        # 1. Try to create the record if it doesn't exist (first action)
+        # fail_if_exists=True ensures only one concurrent caller succeeds.
+        created_id = self.db.create("rate_limits", record, fail_if_exists=True)
+        if created_id:
+            return True
+
+        # 2. If it exists, attempt atomic conditional update
+        # last_action_at__lte = current_time - min_gap_ms/1000
+        cutoff = current_time - (min_gap_ms / 1000.0)
+        
+        return self.db.conditional_update(
+            "rate_limits", 
+            rate_limit_id, 
+            record, 
+            {"last_action_at__lte": cutoff}
+        )
+
     def validate_action_rate(self, session: Session, player_id: str, current_time: float, min_gap_ms: int = 200) -> bool:
         """
-        Validates if the player is allowed to perform an action.
-        Prevents action spamming by enforcing a minimum time gap between
-        consecutive actions on a per-player basis.
-
-        Tracks the last action timestamp per player in the 'rate_limits'
-        collection using a composite key of session_id:player_id.
+        [DEPRECATED] Use check_and_record_rate_limit instead.
         """
         rate_limit_id = f"{session.session_id}:{player_id}"
         record = self.db.read("rate_limits", rate_limit_id)
 
         if record is None:
-            return True  # First action from this player in this session
+            return True
 
         last_action_at = record.get("last_action_at", 0.0)
         elapsed_ms = (current_time - last_action_at) * 1000
@@ -37,8 +64,7 @@ class Validator:
 
     def record_action_rate(self, session_id: str, player_id: str, timestamp: float) -> None:
         """
-        Records the timestamp of a successfully validated action for
-        per-player rate limiting.
+        [DEPRECATED] Use check_and_record_rate_limit instead.
         """
         rate_limit_id = f"{session_id}:{player_id}"
         record = {

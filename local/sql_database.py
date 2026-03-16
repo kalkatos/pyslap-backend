@@ -142,6 +142,33 @@ class SQLiteDatabase(DatabaseInterface):
                 conn.commit()
             return cursor.rowcount > 0
 
+    def conditional_update (self, collection: str, record_id: str, data: dict[str, Any],
+                           filters: dict[str, Any]) -> bool:
+        where_sql, params = self._build_filter_clauses(filters)
+        
+        # Ensure record_id is included in the condition
+        if not where_sql:
+            where_sql = " WHERE record_id = ?"
+        else:
+            # We assume the filters don't already include record_id matching logic for now, 
+            # or if they do, we append it.
+            where_sql += " AND record_id = ?"
+        params.append(record_id)
+
+        with self._lock:
+            conn = self._get_connection()
+            if not self._table_exists(conn, collection):
+                return False
+
+            cursor = conn.execute(
+                f'UPDATE "{collection}" SET timestamp = ?, data = ?{where_sql}',
+                [time.time(), json.dumps(data), *params],
+            )
+            
+            if not self._in_transaction:
+                conn.commit()
+            return cursor.rowcount > 0
+
     def delete (self, collection: str, record_id: str) -> bool:
         with self._lock:
             conn = self._get_connection()
