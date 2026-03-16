@@ -45,7 +45,7 @@ async def test_matchmaking_concurrency ():
     # 3. Create one matchmaking session
     # We'll have p0 create it.
     res = engine.create_session("rps", players[0][1], custom_data={"matchmaking": True})
-    session_id = res["session_id"]
+    session_id = res.session_id
     
     # 4. Simulate concurrent joins by p1-p9
     async def join_task (p_id, token):
@@ -66,18 +66,19 @@ async def test_matchmaking_concurrency ():
     errors = []
 
     for r in results:
-        if isinstance(r, Exception):
+        if isinstance(r, BaseException):
             errors.append(r)
-        elif r["session_id"] == session_id:
+        elif r.session_id == session_id:
             joined_original += 1
         else:
-            new_sessions.add(r["session_id"])
+            new_sessions.add(r.session_id)
 
     assert not errors, f"Encountered errors: {errors}"
     assert joined_original == 1, f"Expected exactly 1 player to join original session, got {joined_original}"
     
     # Check that we don't have multiple players in the same slot
     state_data = db.read("states", session_id)
+    assert state_data != None
     assert len(state_data["slots"]) == 2
     assert len(set(state_data["slots"].values())) == 2
     

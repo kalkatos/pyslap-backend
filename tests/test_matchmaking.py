@@ -99,14 +99,14 @@ def test_join_matchmaking_session():
     result = engine.create_session("mm_game", auth_token, custom_data={"matchmaking": True})
     
     assert result is not None
-    assert result["session_id"] == "sid_1"
+    assert result.session_id == "sid_1"
     
     # Verify session update to ACTIVE
     assert mock_db.update.call_count >= 2  # Updated session + state
     
     session_updates = [call for call in mock_db.update.call_args_list if call[0][0] == "sessions"]
-    assert len(session_updates) == 1
-    updated_session = session_updates[0][0][2]
+    assert len(session_updates) == 2 # 1 for CLAIMED, 1 for ACTIVE
+    updated_session = session_updates[1][0][2]
     
     assert updated_session["status"] == SessionStatus.ACTIVE
     assert "p1" in updated_session["players"]
@@ -157,8 +157,12 @@ def test_matchmaking_cas_failure_retries():
 
     mock_db.query.side_effect = mock_query
 
-    # Mock update: first session update fails (CAS), second session update succeeds, state update succeeds
-    mock_db.update.side_effect = [False, True, True]
+    # Mock update: 
+    # 1. First claim attempt fails (False)
+    # 2. Second claim attempt succeeds (True)
+    # 3. Session status update to ACTIVE succeeds (True)
+    # 4. State update succeeds (True)
+    mock_db.update.side_effect = [False, True, True, True]
 
     engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
 
@@ -167,11 +171,11 @@ def test_matchmaking_cas_failure_retries():
 
     # Despite the first CAS failure, the retry should succeed
     assert result is not None
-    assert result["session_id"] == "sid_1"
+    assert result.session_id == "sid_1"
 
-    # Verify update was called twice for sessions (first failed, second succeeded)
+    # Verify update was called for sessions
     session_updates = [call for call in mock_db.update.call_args_list if call[0][0] == "sessions"]
-    assert len(session_updates) >= 1
+    assert len(session_updates) == 3 # 1st fail, 2nd claim, 3rd active
 
 
 def test_matchmaking_cas_all_retries_exhausted():
@@ -270,15 +274,14 @@ def test_matchmaking_version_incremented_on_join():
 
     assert result is not None
 
-    # Verify that update was called with expected_version=0 (the original version)
+    # Verify that update was called for sessions
     session_updates = [call for call in mock_db.update.call_args_list if call[0][0] == "sessions"]
-    assert len(session_updates) == 1
+    assert len(session_updates) == 2 # 1 for CLAIMED, 1 for ACTIVE
 
     # Check the call arguments - update is called as:
     # self.db.update("sessions", s_id, updated_session_data, expected_version=current_version)
     call_args, call_kwargs = session_updates[0]
     # args are: (collection, record_id, data)
-    # kwargs have: expected_version
     assert call_kwargs.get("expected_version") == 0, "expected_version should be 0"
 
     # Check that the data contains version=1

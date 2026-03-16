@@ -53,8 +53,8 @@ def test_local_entrypoint_flow(setup_engine):
     auth_token = engine.security.create_debug_external_token(player_id, player_name)
     session_info = engine.create_session("rps", auth_token)
     assert session_info is not None
-    session_id = session_info["session_id"]
-    token = session_info["token"]
+    session_id = session_info.session_id
+    token = session_info.token
     
     # 2. Get state via entrypoint
     state = entrypoint.get_state(session_id, player_id, token)
@@ -94,8 +94,8 @@ def test_local_entrypoint_registers_ack_via_action(setup_engine):
     db.create("players", {"id": player_id, "name": player_name, "token": "secret_token"})
     auth_token = engine.security.create_debug_external_token(player_id, player_name)
     session_info = engine.create_session("rps", auth_token)
-    session_id = session_info["session_id"]
-    token = session_info["token"]
+    session_id = session_info.session_id
+    token = session_info.token
 
     # Manually transition state to a gated phase ("round_complete" for RPS)
     # and set session to ACTIVE so ack is accepted

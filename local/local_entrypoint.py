@@ -2,7 +2,7 @@ from typing import Any, Callable, ParamSpec, TypeVar
 from functools import wraps
 from pyslap.interfaces.entrypoint import EntrypointInterface
 from pyslap.core.engine import PySlapEngine
-from pyslap.models.domain import GameState, Role
+from pyslap.models.domain import GameState, Role, SessionResponse
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -32,7 +32,7 @@ def ensure_role (required_role: Role):
     return decorator
 
 
-class LocalEntrypoint(EntrypointInterface):
+class LocalEntrypoint (EntrypointInterface):
     """
     A local implementation of EntrypointInterface that directly interacts with PySlapEngine.
     """
@@ -40,7 +40,7 @@ class LocalEntrypoint(EntrypointInterface):
     def __init__ (self, engine: PySlapEngine):
         self.engine = engine
 
-    def start_session (self, game_id: str, auth_token: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    def start_session (self, game_id: str, auth_token: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None) -> SessionResponse:
         """
         Starts a new session for a player using an external auth token.
         """

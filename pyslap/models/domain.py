@@ -95,3 +95,12 @@ class Session:
     last_action_at: float = 0.0
     lobby_id: Optional[str] = None
     version: int = 0
+
+
+@dataclass
+class SessionResponse:
+    """Response returned when a session is created or joined."""
+    session_id: str
+    token: str
+    state: GameState
+    lobby_id: Optional[str] = None

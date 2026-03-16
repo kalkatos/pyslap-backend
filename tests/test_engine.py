@@ -1,5 +1,6 @@
 import random
 import time
+import pytest
 from typing import Any, Dict
 from unittest.mock import MagicMock
 
@@ -49,9 +50,9 @@ def test_engine_create_session():
     result = engine.create_session("dummy", auth_token)
     
     assert result is not None
-    assert "session_id" in result
-    assert "token" in result
-    assert "state" in result
+    assert result.session_id is not None
+    assert result.token is not None
+    assert result.state is not None
     
     # Verify DB calls
     assert mock_db.create.call_count == 2 # Session and State
@@ -62,14 +63,14 @@ def test_engine_create_session():
     assert args2[0] == "states"
     
     # Verify Scheduler Call
-    mock_scheduler.schedule_next_update.assert_called_once_with(result["session_id"], 1000)
+    mock_scheduler.schedule_next_update.assert_called_once_with(result.session_id, 1000)
 
 
 def test_engine_create_session_unknown_game():
     engine = PySlapEngine(db=MagicMock(), scheduler=MagicMock(), games_registry={})
     auth_token = engine.security.create_debug_external_token("p1", "Alice")
-    result = engine.create_session("unknown", auth_token)
-    assert result is None
+    with pytest.raises(ValueError, match="Unknown game"):
+        engine.create_session("unknown", auth_token)
 
 
 def test_engine_register_action_success():

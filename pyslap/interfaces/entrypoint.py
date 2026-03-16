@@ -1,12 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
-from pyslap.models.domain import GameState, Role
+from pyslap.models.domain import GameState, Role, SessionResponse
 
 
-class EntrypointInterface(ABC):
+class EntrypointInterface (ABC):
     @abstractmethod
-    def start_session(self, game_id: str, auth_token: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    def start_session (self, game_id: str, auth_token: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None) -> SessionResponse:
         pass
 
     @abstractmethod
@@ -14,9 +14,9 @@ class EntrypointInterface(ABC):
         pass
 
     @abstractmethod
-    def get_state(self, session_id: str, player_id: str, token: str) -> GameState:
+    def get_state (self, session_id: str, player_id: str, token: str) -> GameState:
         pass
 
     @abstractmethod
-    def get_data(self, session_id: str, player_id: str, token: str, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
+    def get_data (self, session_id: str, player_id: str, token: str, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
         pass

@@ -84,11 +84,11 @@ async def start_session (request: Request, req: StartSessionRequest):
         
     try:
         result = entrypoint.start_session(req.game_id, req.auth_token, req_role, req.custom_data)
-        if not result:
-            raise HTTPException(status_code=400, detail="Failed to start session. Check game_id or player details.")
-        return result
+        return asdict(result)
     except PermissionError as e:
         raise HTTPException(status_code=401, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/action")
 @limiter.limit("60/minute")

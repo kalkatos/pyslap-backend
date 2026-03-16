@@ -12,7 +12,7 @@ from pyslap.core.validator import Validator
 from pyslap.core.game_rules import GameRules
 from pyslap.interfaces.database import DatabaseInterface
 from pyslap.interfaces.scheduler import SchedulerInterface
-from pyslap.models.domain import Action, GameConfig, GameState, Session, SessionStatus, Role
+from pyslap.models.domain import Action, GameConfig, GameState, Session, SessionStatus, Role, SessionResponse
 
 
 class PySlapEngine:
@@ -89,12 +89,12 @@ class PySlapEngine:
 
     def create_session (
         self, game_id: str, auth_token: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None
-    ) -> dict[str, Any] | None:
+    ) -> SessionResponse:
         """
         Creates a new session, generates tokens, and schedules the first update.
         """
         if game_id not in self.games:
-            return None  # Unknown game
+            raise ValueError(f"Unknown game: {game_id}")
 
         # Verify requester using external auth token
         player = self.security.verify_identity(auth_token, role)
@@ -104,7 +104,8 @@ class PySlapEngine:
         # Fetch Game Configurations
         config_data = self.db.read("game_configs", game_id) or {}
         config_data.pop("id", None)
-        config = GameConfig(**config_data)
+        config_data.pop("game_id", None)
+        config = GameConfig(game_id=game_id, **config_data)
 
         # Handle Matchmaking Wait-and-Join
         if custom_data and custom_data.get("matchmaking"):
@@ -209,7 +210,12 @@ class PySlapEngine:
                             raise
 
                         client_state = state.to_player_state(player.player_id)
-                        return {"session_id": s_id, "token": player.token, "state": client_state, "lobby_id": session.lobby_id}
+                        return SessionResponse(
+                            session_id=s_id,
+                            token=player.token,
+                            state=client_state,
+                            lobby_id=session.lobby_id
+                        )
                     
                     except Exception:
                         # If anything fails during join while claimed, we MUST release the claim
@@ -218,10 +224,6 @@ class PySlapEngine:
                         session.version += 1
                         self.db.update("sessions", s_id, asdict(session))
                         raise
-                else:
-                    # Inner for-loop exhausted all candidates without a CAS failure
-                    # No point retrying -- fall through to create a new session.
-                    break
 
         # Create Session Object
         session_id = str(uuid.uuid4())
@@ -290,7 +292,12 @@ class PySlapEngine:
         # Prepare and return initial state for the requester with their specific private state
         client_state = game_state.to_player_state(player.player_id)
 
-        return {"session_id": session_id, "token": player.token, "state": client_state, "lobby_id": lobby_id}
+        return SessionResponse(
+            session_id=session_id,
+            token=player.token,
+            state=client_state,
+            lobby_id=lobby_id
+        )
 
     # Framework-reserved action types handled natively by the engine.
     FRAMEWORK_ACTIONS = frozenset({"ack"})
