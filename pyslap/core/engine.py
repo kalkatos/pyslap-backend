@@ -59,33 +59,35 @@ class PySlapEngine:
         Deletes sessions older than max_age_sec (default 5 hours) and their related data.
 
         This is a maintenance operation that should be invoked independently
-        (e.g. via a cron job, Cloud Scheduler, or background worker) — NOT during
-        normal request handling.
+        (e.g. via a cron job, Cloud Scheduler, or background worker).
 
-        Uses server-side filtering to avoid loading entire collections into memory.
+        Uses batch delete operations to handle large volumes efficiently.
         Returns the number of cleaned-up sessions.
         """
         cutoff = time.time() - max_age_sec
 
-        # Server-side filtered query: only fetch sessions older than cutoff
+        # 1. Server-side filtered query: fetch and delete sessions matching the age criterion
         old_sessions = self.db.delete_by_filter("sessions", {"created_at__lt": cutoff})
+        if not old_sessions:
+            return 0
 
-        cleaned = 0
-        for session in old_sessions:
-            session_id = session["id"]
+        session_ids = [s["id"] for s in old_sessions]
+        total_cleaned = len(session_ids)
 
-            # Batch-delete all actions tied to this session
-            self.db.delete_by_filter("actions", {"session_id": session_id})
+        # 2. Batch-delete related data in chunks to avoid database engine parameter limits
+        BATCH_SIZE = 500
+        for i in range(0, total_cleaned, BATCH_SIZE):
+            batch_ids = session_ids[i : i + BATCH_SIZE]
 
-            # Delete rate limit records tied to this session
-            self.db.delete_by_filter("rate_limits", {"session_id": session_id})
+            # Clear actions, rate limits, and game states tied to these sessions
+            self.db.delete_by_filter("actions", {"session_id__in": batch_ids})
+            self.db.delete_by_filter("rate_limits", {"session_id__in": batch_ids})
+            self.db.delete_by_filter("states", {"id__in": batch_ids})
+            
+            # Also clear any lingering loop locks
+            self.db.delete_by_filter("locks", {"session_id__in": batch_ids})
 
-            # Delete the state record
-            self.db.delete("states", session_id)
-
-            cleaned += 1
-
-        return cleaned
+        return total_cleaned
 
     def create_session (
         self, game_id: str, auth_token: str, role: Role = Role.PLAYER, custom_data: dict[str, Any] | None = None

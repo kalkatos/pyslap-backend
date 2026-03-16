@@ -183,7 +183,7 @@ class SQLiteDatabase(DatabaseInterface):
             return cursor.rowcount > 0
 
     # Operator suffixes supported by delete_by_filter and _build_filter_clauses
-    _OPERATORS = {"__lt": "<", "__lte": "<=", "__gt": ">", "__gte": ">=", "__ne": "!="}
+    _OPERATORS = {"__lt": "<", "__lte": "<=", "__gt": ">", "__gte": ">=", "__ne": "!=", "__in": "IN"}
 
     def _build_filter_clauses (self, filters: dict[str, Any]) -> tuple[str, list[Any]]:
         """
@@ -203,10 +203,23 @@ class SQLiteDatabase(DatabaseInterface):
                     field = key[: -len(suffix)]
                     break
 
-            if value is None:
-                clauses.append(f'json_extract(data, "$.{field}") IS NULL')
+            # Use indexed record_id column for 'id' field for performance
+            target_col = "record_id" if field == "id" else f'json_extract(data, "$.{field}")'
+
+            if sql_op == "IN":
+                if not isinstance(value, (list, tuple)):
+                    value = [value]
+                if not value:
+                    # Handle empty IN list: should never match anything
+                    clauses.append("1 = 0")
+                else:
+                    placeholders = ",".join(["?"] * len(value))
+                    clauses.append(f'{target_col} IN ({placeholders})')
+                    params.extend(value)
+            elif value is None:
+                clauses.append(f"{target_col} IS NULL" if sql_op == "=" else f"{target_col} IS NOT NULL")
             else:
-                clauses.append(f'json_extract(data, "$.{field}") {sql_op} ?')
+                clauses.append(f"{target_col} {sql_op} ?")
                 params.append(value)
 
         where_sql = (" WHERE " + " AND ".join(clauses)) if clauses else ""

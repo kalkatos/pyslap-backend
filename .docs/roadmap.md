@@ -31,13 +31,13 @@ Features already done are marked with ✅DONE
     *   Modify `create_session` to use a more efficient lookup and lock mechanism for joining sessions.
 *   **Testing**: Use a load-testing script to simulate 100+ players joining simultaneously; verify database query counts remain linear rather than exponential.
 
-### 23. Atomic Player Rate Limiting
+### ✅DONE 23. Atomic Player Rate Limiting
 *   **Description**: Prevent players from bypassing rate limits by sending multiple concurrent actions.
 *   **Changes**:
     *   Refactor `Validator.validate_action_rate` and `record_action_rate` into a single atomic database operation (e.g., using `UPDATE ... WHERE last_action < current - gap`).
 *   **Testing**: Send 10 identical move actions at the same microsecond; verify only one is accepted.
 
-### 24. Batch Maintenance Operations
+### ✅DONE 24. Batch Maintenance Operations
 *   **Description**: Optimize `cleanup_old_records` to handle large volumes of expired sessions without blocking.
 *   **Changes**:
     *   Replace sequential per-session loops with batch delete operations using `db.delete_by_filter`.

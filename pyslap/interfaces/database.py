@@ -66,6 +66,7 @@ class DatabaseInterface(ABC):
           - "field__gt": value  →  field > value
           - "field__gte": value →  field >= value
           - "field__ne": value  →  field != value
+          - "field__in": list   →  field IN (values)
           - "field": value      →  field = value (exact match)
         """
         pass
@@ -105,6 +106,7 @@ class DatabaseInterface(ABC):
           - "field__gt": value  →  field > value
           - "field__gte": value →  field >= value
           - "field__ne": value  →  field != value
+          - "field__in": list   →  field IN (values)
           - "field": value      →  field = value (exact match)
         """
         pass
