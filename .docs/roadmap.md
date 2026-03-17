@@ -89,7 +89,7 @@ Features already done are marked with ✅DONE
     *   Gracefully handle the "already exists" case by re-reading the existing record.
 *   **Testing**: Simulate two concurrent identity verifications for the same new `player_id` and ensure only one DB create occurs without errors.
 
-### 27. Scheduler Control (Cancellation Support)
+### 27. Scheduler Control (Cancellation Support) [x]
 *   **Description**: Prevent "orphan" update loops when sessions are re-initialized or terminated unexpectedly.
 *   **Changes**:
     *   Add `cancel_update(session_id)` and `is_scheduled(session_id)` to `SchedulerInterface`.

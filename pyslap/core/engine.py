@@ -79,6 +79,10 @@ class PySlapEngine:
         for i in range(0, total_cleaned, BATCH_SIZE):
             batch_ids = session_ids[i : i + BATCH_SIZE]
 
+            # Cancel any pending updates for these sessions to prevent orphan loops
+            for s_id in batch_ids:
+                self.scheduler.cancel_update(s_id)
+
             # Clear actions, rate limits, and game states tied to these sessions
             self.db.delete_by_filter("actions", {"session_id__in": batch_ids})
             self.db.delete_by_filter("rate_limits", {"session_id__in": batch_ids})

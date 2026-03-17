@@ -16,10 +16,25 @@ class SchedulerInterface(ABC):
         pass
 
     @abstractmethod
-    def schedule_next_update(self, session_id: str, delay_ms: int) -> bool:
+    def schedule_next_update (self, session_id: str, delay_ms: int) -> bool:
         """
         Schedules an update loop execution for the given session ID after
         a specified delay in milliseconds (typically >= 500ms).
         Returns True if scheduling was successful.
+        """
+        pass
+
+    @abstractmethod
+    def cancel_update (self, session_id: str) -> bool:
+        """
+        Cancels any pending update for the given session ID.
+        Returns True if a pending update was found and canceled.
+        """
+        pass
+
+    @abstractmethod
+    def is_scheduled (self, session_id: str) -> bool:
+        """
+        Checks if an update is currently scheduled for the given session ID.
         """
         pass
