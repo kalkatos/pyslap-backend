@@ -46,8 +46,11 @@ class RpsGameRules(GameRules):
     # GameRules interface
     # ------------------------------------------------------------------
 
-    def get_phase_gates(self) -> set[str]:
+    def get_phase_gates (self) -> set[str]:
         return {"round_complete"}
+
+    def get_slot_priority (self) -> list[str]:
+        return ["slot_0", "slot_1", "slot_2", "slot_3"]
 
     def create_game_state(self, players: list[Player], custom_data: dict[str, Any]) -> GameState:
         private_state = {}
@@ -72,14 +75,11 @@ class RpsGameRules(GameRules):
         is_matchmaking = custom_data.get("matchmaking", False)
         initial_phase = "waiting_for_players" if is_matchmaking else "waiting_for_move"
 
-        # Initialize slots if not provided (for engine-less tests)
+        # Initialize slots: Engine will handle player slots.
+        # We only need to ensure bot slot is handled if using bot.
         slots = {}
-        if players:
-            slots["slot_0"] = players[0].player_id
-            if len(players) > 1:
-                slots["slot_1"] = players[1].player_id
-            elif use_bot:
-                slots["slot_1"] = "computer"
+        if use_bot:
+            slots["slot_1"] = "computer"
 
         return GameState(
             session_id="",

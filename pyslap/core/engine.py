@@ -127,7 +127,9 @@ class PySlapEngine:
                 waiting_sessions = self.db.query("sessions", query_filters)
 
                 for session_data in waiting_sessions:
-                    s_id = session_data["id"]
+                    s_id = session_data.get("id")
+                    if not s_id:
+                        continue
                     session_data.pop("id", None)
                     session = Session(**session_data)
 
@@ -168,23 +170,24 @@ class PySlapEngine:
                         state_data.pop("id", None)
                         state = GameState(**state_data)
 
-                        # Assign sticky slot if not already assigned
-                        if player.player_id not in state.slots.values():
-                            slot_id = f"slot_{len(state.slots)}"
-                            state.slots[slot_id] = player.player_id
-
-                        # Determine next status: ACTIVE if full, otherwise back to MATCHMAKING
-                        if len(session.players) >= config.max_players:
-                            session.status = SessionStatus.ACTIVE
-                        else:
-                            session.status = SessionStatus.MATCHMAKING
-
-                        session.version = current_version + 1
-                        updated_session_data = asdict(session)
-                        updated_session_data["id"] = s_id
-
                         self.db.start_transaction()
                         try:
+                            # Assign sticky slot if not already assigned
+                            if not self._assign_player_slot(state, player, config, self.games[game_id]):
+                                # This should not happen if max_players is respected, but safety first.
+                                self.db.rollback()
+                                continue
+
+                            # Determine next status: ACTIVE if full, otherwise back to MATCHMAKING
+                            if len(session.players) >= config.max_players:
+                                session.status = SessionStatus.ACTIVE
+                            else:
+                                session.status = SessionStatus.MATCHMAKING
+
+                            session.version = current_version + 1
+                            updated_session_data = asdict(session)
+                            updated_session_data["id"] = s_id
+
                             # Final update for session (releases claim via status change)
                             if not self.db.update("sessions", s_id, updated_session_data,
                                                 expected_version=current_version):
@@ -192,20 +195,7 @@ class PySlapEngine:
                                 self.db.rollback()
                                 continue
 
-                            # safe to update state
-                            original_public = copy.deepcopy(state.public_state)
-                            original_private = copy.deepcopy(state.private_state)
-                            original_phase = state.public_state.get("phase")
-
-                            state = self.games[game_id].setup_player_state(state, player)
-
-                            if state.public_state != original_public or state.private_state != original_private:
-                                state.state_version += 1
-                            new_phase = state.public_state.get("phase")
-                            if new_phase != original_phase:
-                                state.phase_ack = {p: False for p in session.players.keys()}
-                                state.phase_ack_since = time.time()
-
+                            # Update state
                             updated_state_data = asdict(state)
                             updated_state_data["id"] = s_id
                             self.db.update("states", s_id, updated_state_data)
@@ -275,7 +265,7 @@ class PySlapEngine:
         game_state.random_seed = random.getrandbits(64)
 
         # Assign first sticky slot
-        game_state.slots["slot_0"] = player.player_id
+        self._assign_player_slot(game_state, player, config, self.games[game_id])
 
         # Save to database
         session_data = asdict(session)
@@ -304,6 +294,90 @@ class PySlapEngine:
             state=client_state,
             lobby_id=lobby_id
         )
+
+    def leave_session (self, session_id: str, player_id: str, token: str) -> bool:
+        """
+        Removes a player from a session and vacates their slot.
+        """
+        if not self.security.validate_request_token(session_id, player_id, token):
+            return False
+
+        # 1. Load Session
+        session_data = self.db.read("sessions", session_id)
+        if not session_data or player_id not in session_data.get("players", {}):
+            return False
+
+        session_data.pop("id", None)
+        session = Session(**session_data)
+
+        # 2. Load State
+        state_data = self.db.read("states", session_id)
+        if not state_data:
+            return False
+
+        state_data.pop("id", None)
+        state = GameState(**state_data)
+
+        # 3. Load Game Config for max_players
+        config_data = self.db.read("game_configs", session.game_id) or {}
+        config_data.pop("id", None)
+        config_data.pop("game_id", None)
+        config = GameConfig(game_id=session.game_id, **config_data)
+
+        self.db.start_transaction()
+        try:
+            # 1. Update Session
+            session.players.pop(player_id, None)
+            
+            # If the session was ACTIVE and now has room, put it back to MATCHMAKING
+            # to allow others to join via matchmaking.
+            if session.status == SessionStatus.ACTIVE and len(session.players) < config.max_players:
+                session.status = SessionStatus.MATCHMAKING
+
+            updated_session_data = asdict(session)
+            updated_session_data["id"] = session_id
+            self.db.update("sessions", session_id, updated_session_data)
+
+            # 2. Update Game State
+            # Vacate the slot
+            slot_to_vacate = None
+            for slot_id, p_id in state.slots.items():
+                if p_id == player_id:
+                    slot_to_vacate = slot_id
+                    break
+            
+            if slot_to_vacate:
+                state.slots.pop(slot_to_vacate)
+            
+            updated_state_data = asdict(state)
+            updated_state_data["id"] = session_id
+            self.db.update("states", session_id, updated_state_data)
+            
+            # 3. Cleanup nonces and acks
+            self.db.delete_by_filter("nonces", {"session_id": session_id, "player_id": player_id})
+            state.phase_ack.pop(player_id, None)
+
+            self.db.commit()
+            return True
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def _assign_player_slot (self, state: GameState, player: Player, config: GameConfig, rules: GameRules) -> bool:
+        """
+        Assigns a player to the first available slot based on game-defined priorities.
+        """
+        if player.player_id in state.slots.values():
+            return True # Already assigned
+
+        priorities = rules.get_slot_priority()
+        
+        for slot_id in priorities:
+            if slot_id not in state.slots:
+                state.slots[slot_id] = player.player_id
+                return True
+
+        return False # No available slots (should be blocked by max_players check)
 
     # Framework-reserved action types handled natively by the engine.
     FRAMEWORK_ACTIONS = frozenset({"ack"})
@@ -641,3 +715,19 @@ class PySlapEngine:
         # Enforce serverless minimum interval requirement (>=500ms)
         delay_ms = max(config.update_interval_ms, self.MINIMUM_UPDATE_INTERVAL_MS)
         self.scheduler.schedule_next_update(session_id, delay_ms)
+
+    def _assign_player_slot (self, state: GameState, player: Player, config: GameConfig, rules: GameRules) -> bool:
+        """
+        Assigns a player to the first available slot based on game-defined priorities.
+        """
+        if player.player_id in state.slots.values():
+            return True # Already assigned
+
+        priorities = rules.get_slot_priority()
+        
+        for slot_id in priorities:
+            if slot_id not in state.slots:
+                state.slots[slot_id] = player.player_id
+                return True
+
+        return False # No available slots (should be blocked by max_players check)

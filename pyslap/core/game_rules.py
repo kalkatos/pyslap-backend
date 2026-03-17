@@ -64,7 +64,16 @@ class GameRules(ABC):
         """
         pass
 
-    def get_phase_gates(self) -> set[str]:
+    def get_slot_priority (self) -> list[str]:
+        """
+        Returns a list of slot IDs in order of preference for players joining.
+        Override in subclasses to provide specific slot assignment logic.
+        Default: slot_0, slot_1, slot_2, etc. (up to a reasonable limit or based on config).
+        """
+        return [f"slot_{i}" for i in range(100)]
+
+
+    def get_phase_gates (self) -> set[str]:
         """
         Returns a set of phase names that must be seen by all session
         players before apply_update_tick is allowed to transition them.
