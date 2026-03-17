@@ -719,20 +719,4 @@ class PySlapEngine:
         delay_ms = max(config.update_interval_ms, self.MINIMUM_UPDATE_INTERVAL_MS)
         self.scheduler.schedule_next_update(session_id, delay_ms)
 
-    def _assign_player_slot (self, state: GameState, player: Player, config: GameConfig, rules: GameRules) -> bool:
-        """
-        Assigns a player to the first available slot based on game-defined priorities.
-        """
-        if player.player_id in state.slots.values():
-            return True # Already assigned
-
-        priorities = rules.get_slot_priority()
-        
-        for slot_id in priorities:
-            if slot_id not in state.slots:
-                state.slots[slot_id] = player.player_id
-                return True
-
-        return False # No available slots (should be blocked by max_players check)
-
     # Framework-reserved action types handled natively by the engine.
