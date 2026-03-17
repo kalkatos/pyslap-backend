@@ -4,7 +4,8 @@ import pytest
 from typing import Any, Dict
 from unittest.mock import MagicMock
 
-from pyslap.core.engine import PySlapEngine
+from pyslap.core.engine import PySlapEngine, SessionResponse
+from pyslap.core.test_utils import create_debug_external_token
 from pyslap.core.game_rules import GameRules
 from pyslap.models.domain import Action, GameState, SessionStatus, Player
 
@@ -46,7 +47,7 @@ def test_engine_create_session():
     
     engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
     
-    auth_token = engine.security.create_debug_external_token("p1", "Alice")
+    auth_token = create_debug_external_token("p1", "Alice")
     result = engine.create_session("dummy", auth_token)
     
     assert result is not None
@@ -68,7 +69,7 @@ def test_engine_create_session():
 
 def test_engine_create_session_unknown_game():
     engine = PySlapEngine(db=MagicMock(), scheduler=MagicMock(), games_registry={})
-    auth_token = engine.security.create_debug_external_token("p1", "Alice")
+    auth_token = create_debug_external_token("p1", "Alice")
     with pytest.raises(ValueError, match="Unknown game"):
         engine.create_session("unknown", auth_token)
 
@@ -448,7 +449,7 @@ def test_engine_deterministic_random_seed_on_create():
     mock_db.read.side_effect = mock_db_read
 
     engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
-    auth_token = engine.security.create_debug_external_token("p1", "Alice")
+    auth_token = create_debug_external_token("p1", "Alice")
     result = engine.create_session("dummy", auth_token)
 
     # Verify random_seed was set

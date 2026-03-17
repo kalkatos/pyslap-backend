@@ -117,8 +117,6 @@ class TestCleanupOldRecords:
             {"id": "old_3", "created_at": 300.0},
         ]
 
-        call_count = [0]
-
         def mock_delete_by_filter(collection, filters):
             if collection == "sessions":
                 return old_sessions

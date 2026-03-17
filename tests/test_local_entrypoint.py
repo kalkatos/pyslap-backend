@@ -6,6 +6,8 @@ from local.sql_database import SQLiteDatabase
 from local.local_scheduler import LocalScheduler
 from local.local_entrypoint import LocalEntrypoint
 from pyslap.core.engine import PySlapEngine
+from pyslap.core.test_utils import create_debug_external_token
+from pyslap.models.domain import Role
 from games.rps import RpsGameRules
 
 import uuid
@@ -50,7 +52,7 @@ def test_local_entrypoint_flow(setup_engine):
     # PySlapEngine.security uses db.
     db.create("players", {"id": player_id, "name": player_name, "token": "secret_token"})
     
-    auth_token = engine.security.create_debug_external_token(player_id, player_name)
+    auth_token = create_debug_external_token(player_id, player_name)
     session_info = engine.create_session("rps", auth_token)
     assert session_info is not None
     session_id = session_info.session_id
@@ -92,7 +94,7 @@ def test_local_entrypoint_registers_ack_via_action(setup_engine):
     player_id = "player1"
     player_name = "Alex"
     db.create("players", {"id": player_id, "name": player_name, "token": "secret_token"})
-    auth_token = engine.security.create_debug_external_token(player_id, player_name)
+    auth_token = create_debug_external_token(player_id, player_name)
     session_info = engine.create_session("rps", auth_token)
     session_id = session_info.session_id
     token = session_info.token

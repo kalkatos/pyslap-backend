@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     guest_allowed: bool = True
     guest_lifetime_sec: int = 86400  # 24 hours
     guest_id_prefix: str = "anon_"
+    session_token_ttl: int = 3600  # 1 hour
     
     model_config = {
         "env_file": ".env",

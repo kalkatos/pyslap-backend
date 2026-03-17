@@ -2,6 +2,7 @@ import jwt
 from unittest.mock import MagicMock
 
 from pyslap.core.security import SecurityManager
+from pyslap.core.test_utils import create_debug_external_token
 from pyslap.models.domain import Role
 
 
@@ -22,7 +23,7 @@ def test_verify_identity_success():
     mock_db.read.return_value = {"id": "p1", "name": "Alice"}  # Player exists
     security = SecurityManager(mock_db)
     
-    auth_token = security.create_debug_external_token("p1", "Alice")
+    auth_token = create_debug_external_token("p1", "Alice")
     player = security.verify_identity(auth_token)
     
     assert player is not None
@@ -36,7 +37,7 @@ def test_verify_identity_unknown_player():
     mock_db.read.return_value = None  # Player not found initially
     security = SecurityManager(mock_db)
     
-    auth_token = security.create_debug_external_token("unknown", "Alice")
+    auth_token = create_debug_external_token("unknown", "Alice")
     player = security.verify_identity(auth_token)
     
     # Should automatically create player (JIT)

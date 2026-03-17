@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
 from local.app import app, db, limiter, engine
+from pyslap.core.test_utils import create_debug_external_token
+from pyslap.core.engine import PySlapEngine
 import pytest
 
 client = TestClient(app)
@@ -35,7 +37,7 @@ def test_start_session():
 
     response = client.post(
         "/session",
-        json={"game_id": "rps", "auth_token": engine.security.create_debug_external_token("p1", "Player 1")},
+        json={"game_id": "rps", "auth_token": create_debug_external_token("p1", "Player 1")},
     )
 
     assert response.status_code == 200
@@ -49,7 +51,7 @@ def test_start_session():
 def test_start_session_unknown_game():
     response = client.post(
         "/session",
-        json={"game_id": "unknown_game", "auth_token": engine.security.create_debug_external_token("p1", "Player 1")},
+        json={"game_id": "unknown_game", "auth_token": create_debug_external_token("p1", "Player 1")},
     )
 
     assert response.status_code == 400
@@ -70,7 +72,7 @@ def test_get_state():
     # Start session
     resp1 = client.post(
         "/session",
-        json={"game_id": "rps", "auth_token": engine.security.create_debug_external_token("p1", "Player 1")},
+        json={"game_id": "rps", "auth_token": create_debug_external_token("p1", "Player 1")},
     )
     session_data = resp1.json()
     session_id = session_data["session_id"]
@@ -99,7 +101,7 @@ def test_send_action():
     # Start session
     resp1 = client.post(
         "/session",
-        json={"game_id": "rps", "auth_token": engine.security.create_debug_external_token("p1", "Player 1")},
+        json={"game_id": "rps", "auth_token": create_debug_external_token("p1", "Player 1")},
     )
     session_data = resp1.json()
     session_id = session_data["session_id"]
@@ -136,7 +138,7 @@ def test_get_data():
     # Start session
     resp1 = client.post(
         "/session",
-        json={"game_id": "rps", "auth_token": engine.security.create_debug_external_token("p1", "Player 1")},
+        json={"game_id": "rps", "auth_token": create_debug_external_token("p1", "Player 1")},
     )
     session_data = resp1.json()
     session_id = session_data["session_id"]
@@ -174,7 +176,7 @@ def test_rbac_spectator_action():
     # Start session as spectator
     resp1 = client.post(
         "/session",
-        json={"game_id": "rps", "auth_token": engine.security.create_debug_external_token("p1", "Player 1"), "role": "spectator"},
+        json={"game_id": "rps", "auth_token": create_debug_external_token("p1", "Player 1"), "role": "spectator"},
     )
     assert resp1.status_code == 200
     session_data = resp1.json()
@@ -206,7 +208,7 @@ def test_rate_limit_session():
     for i in range(6):
         resp = client.post(
             "/session",
-            json={"game_id": "rps", "auth_token": engine.security.create_debug_external_token("p1", "Player 1")},
+            json={"game_id": "rps", "auth_token": create_debug_external_token("p1", "Player 1")},
         )
         if i < 5:
             assert resp.status_code in [200, 400]

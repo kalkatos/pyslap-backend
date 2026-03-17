@@ -26,7 +26,7 @@ class SecurityManager:
             "player_id": player_id,
             "session_id": session_id,
             "role": role.value,
-            "exp": time.time() + 86400  # 24 hours expiration
+            "exp": time.time() + settings.session_token_ttl
         }
         return jwt.encode(payload, self.secret_key, algorithm="HS256")
 
@@ -79,15 +79,6 @@ class SecurityManager:
             return Player(player_id=player_id, name=final_name, role=role)
         except jwt.PyJWTError:
             return None
-
-    def create_debug_external_token (self, player_id: str, name: str) -> str:
-        """Helper to create a valid external auth token for local testing."""
-        payload = {
-            "player_id": player_id,
-            "name": name,
-            "exp": time.time() + 86400
-        }
-        return jwt.encode(payload, self.external_secret, algorithm="HS256")
 
     def generate_guest_auth_token (self) -> str:
         """

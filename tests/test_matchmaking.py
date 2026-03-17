@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 from pyslap.core.engine import PySlapEngine
 from pyslap.core.game_rules import GameRules
+from pyslap.core.test_utils import create_debug_external_token
 from pyslap.models.domain import Action, GameState, SessionStatus, Player
 from typing import Any, Dict
 import random
@@ -43,8 +44,8 @@ def test_create_matchmaking_session():
     mock_db.query.return_value = []  # No existing waiting sessions
     
     engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
-    
-    auth_token = engine.security.create_debug_external_token("p1", "Alice")
+    # Create p1 token
+    auth_token = create_debug_external_token("p1", "Alice")
     result = engine.create_session("mm_game", auth_token, custom_data={"matchmaking": True})
     
     assert result is not None
@@ -95,7 +96,7 @@ def test_join_matchmaking_session():
     engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
     
     # 2. Second player joins
-    auth_token = engine.security.create_debug_external_token("p2", "Bob")
+    auth_token = create_debug_external_token("p2", "Bob")
     result = engine.create_session("mm_game", auth_token, custom_data={"matchmaking": True})
     
     assert result is not None
@@ -166,7 +167,7 @@ def test_matchmaking_cas_failure_retries():
 
     engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
 
-    auth_token = engine.security.create_debug_external_token("p2", "Bob")
+    auth_token = create_debug_external_token("p2", "Bob")
     result = engine.create_session("mm_game", auth_token, custom_data={"matchmaking": True})
 
     # Despite the first CAS failure, the retry should succeed
@@ -220,7 +221,7 @@ def test_matchmaking_cas_all_retries_exhausted():
 
     engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
 
-    auth_token = engine.security.create_debug_external_token("p2", "Bob")
+    auth_token = create_debug_external_token("p2", "Bob")
     result = engine.create_session("mm_game", auth_token, custom_data={"matchmaking": True})
 
     # Should fall through to creating a new session
@@ -269,7 +270,7 @@ def test_matchmaking_version_incremented_on_join():
 
     engine = PySlapEngine(db=mock_db, scheduler=mock_scheduler, games_registry=games)
 
-    auth_token = engine.security.create_debug_external_token("p2", "Bob")
+    auth_token = create_debug_external_token("p2", "Bob")
     result = engine.create_session("mm_game", auth_token, custom_data={"matchmaking": True})
 
     assert result is not None
