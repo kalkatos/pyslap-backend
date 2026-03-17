@@ -15,7 +15,7 @@ class SQLiteDatabase(DatabaseInterface):
     Stores each collection in its own table with JSON data.
     """
 
-    def __init__ (self, db_path: str = "temp_database"):
+    def __init__ (self, db_path: str = "temp_database.db"):
         self.db_path = db_path
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row

@@ -2,5 +2,4 @@
 .venv
 .env
 .pytest_cache
-temp_database
 *.db
