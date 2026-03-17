@@ -62,13 +62,23 @@ class SecurityManager:
                 # Just-In-Time (JIT) Registration
                 # Automatically create unknown players using data from their JWT token
                 name = str(payload.get("name") or self._create_guest_name())
-                self.db.create("players", {
+                player_data = {
                     "id": player_id,
                     "name": name,
                     "registered_at": time.time(),
                     "is_guest": is_guest_token
-                })
-                record = {"id": player_id, "name": name, "is_guest": is_guest_token}
+                }
+                # Use fail_if_exists=True to handle concurrent registration races atomicaly
+                created_id = self.db.create("players", player_data, fail_if_exists=True)
+                
+                if not created_id:
+                    # Race: someone else created the player record between our check (line 53) and create.
+                    # Re-read the record to ensure consistency.
+                    record = self.db.read("players", player_id)
+                    if not record:
+                        return None  # Should be impossible unless deleted concurrently
+                else:
+                    record = player_data
             
             # Prevent users that are marked as guests in DB from logging in if guests are disabled
             if record.get("is_guest") and not settings.guest_allowed:

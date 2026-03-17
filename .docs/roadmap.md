@@ -82,7 +82,7 @@ Features already done are marked with ✅DONE
     *   Implement `SESSION_TOKEN_TTL` in `settings.py` (default to 1 hour).
 *   **Testing**: Verify `create_debug_external_token` is inaccessible in the core engine; verify session tokens expire after the configured TTL.
 
-### 26. Atomic JIT Player Registration
+### ✅DONE 26. Atomic JIT Player Registration
 *   **Description**: Fix the race condition in `SecurityManager.verify_identity` where multiple simultaneous requests for a new player could cause duplicate or overwritten player records.
 *   **Changes**:
     *   Update `SecurityManager.verify_identity` to use `db.create(..., fail_if_exists=True)`.
