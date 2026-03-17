@@ -77,13 +77,19 @@ class TestCleanupOldRecords:
         assert sessions_call[0][0] == "sessions"
         assert "created_at__lt" in sessions_call[0][1]
 
-        # Verify actions were batch-deleted
-        actions_call = mock_db.delete_by_filter.call_args_list[1]
-        assert actions_call[0][0] == "actions"
-        assert actions_call[0][1] == {"session_id": "old_session_1"}
+        # Verify total calls to delete_by_filter (1 for sessions + 4 related types)
+        assert mock_db.delete_by_filter.call_count == 5
 
-        # Verify state was deleted individually
-        mock_db.delete.assert_called_once_with("states", "old_session_1")
+        # Verify specific batch filters for related data
+        # Note: filters use __in for session IDs
+        calls = {call.args[0]: call.args[1] for call in mock_db.delete_by_filter.call_args_list}
+        assert calls["actions"] == {"session_id__in": ["old_session_1"]}
+        assert calls["rate_limits"] == {"session_id__in": ["old_session_1"]}
+        assert calls["states"] == {"id__in": ["old_session_1"]}
+        assert calls["locks"] == {"session_id__in": ["old_session_1"]}
+
+        # Individual delete should never be called now
+        mock_db.delete.assert_not_called()
 
     def test_cleanup_returns_zero_when_nothing_to_clean(self):
         mock_db = MagicMock()
@@ -123,8 +129,16 @@ class TestCleanupOldRecords:
         result = engine.cleanup_old_records()
 
         assert result == 3
-        # 3 state deletions
-        assert mock_db.delete.call_count == 3
+        # Verify total calls to delete_by_filter
+        assert mock_db.delete_by_filter.call_count == 5
+
+        # Verify that all 3 IDs were passed in the batch filters
+        expected_ids = ["old_1", "old_2", "old_3"]
+        calls = {call.args[0]: call.args[1] for call in mock_db.delete_by_filter.call_args_list}
+        assert calls["states"] == {"id__in": expected_ids}
+        
+        # Individual delete should never be called
+        assert mock_db.delete.call_count == 0
 
 
 class TestSQLiteDeleteByFilter:
