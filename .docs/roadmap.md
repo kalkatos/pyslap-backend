@@ -8,6 +8,38 @@ Features already done are marked with ✅DONE
 
 ---
 
+## ✨ Feature Improvements
+
+### 1. Spectator Mode
+*   **Description**: Support users watching matches without participating.
+*   **Changes**:
+    *   Update `PySlapEngine.register_action` to allow joining sessions beyond the `max_players` limit if the role is `SPECTATOR`.
+    *   Update `GameRules.to_player_state` to ensure spectators receive the full public state but no private data.
+*   **Testing**: Join a match with 2 players and 1 spectator. Verify the spectator sees updates but cannot move.
+
+### 2. Match Replay & History
+*   **Description**: Record the sequence of actions and state transitions to allow post-game review.
+*   **Changes**:
+    *   Add an `action_history` collection to the database.
+    *   Update the engine to archive the full state and action logs when a session terminates.
+*   **Testing**: Play a full match, then use a script to fetch the history and verify every move is logged in order.
+
+### 3. Global Leaderboards
+*   **Description**: Track player wins and losses across all sessions and games.
+*   **Changes**:
+    *   Implement a `player_stats` collection in the database.
+    *   Update the engine to report winners to the database when a game ends.
+*   **Testing**: Play multiple matches as the same player and verify the win count increments in the DB.
+
+### 4. In-Game Chat System
+*   **Description**: Simple text communication between players during active sessions.
+*   **Changes**:
+    *   Add a `chat` action type to the engine.
+    *   Store messages in a `messages` list within the `public_state` for real-time syncing.
+*   **Testing**: Send a chat action from one client and verify it appears in the display of the other client.
+
+---
+
 ## 🛠️ Infrastructure & Stability Fixes
 
 ### ✅DONE 20. Atomic Distributed Locking
@@ -43,43 +75,38 @@ Features already done are marked with ✅DONE
     *   Replace sequential per-session loops with batch delete operations using `db.delete_by_filter`.
 *   **Testing**: Populate the DB with 10,000 expired sessions and verify cleanup completes in seconds rather than minutes.
 
-### 25. Security Hardening
+### ✅DONE 25. Security Hardening
 *   **Description**: Reduce the exploit surface of debugging tools and session tokens.
 *   **Changes**:
     *   Move `create_debug_external_token` to a separate `test_utils.py` not included in production builds.
     *   Implement `SESSION_TOKEN_TTL` in `settings.py` (default to 1 hour).
 *   **Testing**: Verify `create_debug_external_token` is inaccessible in the core engine; verify session tokens expire after the configured TTL.
 
----
-
-## ✨ Feature Improvements
-
-### 1. Spectator Mode
-*   **Description**: Support users watching matches without participating.
+### 26. Atomic JIT Player Registration
+*   **Description**: Fix the race condition in `SecurityManager.verify_identity` where multiple simultaneous requests for a new player could cause duplicate or overwritten player records.
 *   **Changes**:
-    *   Update `PySlapEngine.register_action` to allow joining sessions beyond the `max_players` limit if the role is `SPECTATOR`.
-    *   Update `GameRules.to_player_state` to ensure spectators receive the full public state but no private data.
-*   **Testing**: Join a match with 2 players and 1 spectator. Verify the spectator sees updates but cannot move.
+    *   Update `SecurityManager.verify_identity` to use `db.create(..., fail_if_exists=True)`.
+    *   Gracefully handle the "already exists" case by re-reading the existing record.
+*   **Testing**: Simulate two concurrent identity verifications for the same new `player_id` and ensure only one DB create occurs without errors.
 
-### 2. Match Replay & History
-*   **Description**: Record the sequence of actions and state transitions to allow post-game review.
+### 27. Scheduler Control (Cancellation Support)
+*   **Description**: Prevent "orphan" update loops when sessions are re-initialized or terminated unexpectedly.
 *   **Changes**:
-    *   Add an `action_history` collection to the database.
-    *   Update the engine to archive the full state and action logs when a session terminates.
-*   **Testing**: Play a full match, then use a script to fetch the history and verify every move is logged in order.
+    *   Add `cancel_update(session_id)` and `is_scheduled(session_id)` to `SchedulerInterface`.
+    *   Implement these in `LocalScheduler` and ensure `PySlapEngine` uses them during cleanup or re-entry.
+*   **Testing**: Schedule an update, cancel it, and verify the callback is never invoked.
 
-### 3. Global Leaderboards
-*   **Description**: Track player wins and losses across all sessions and games.
+### 28. Slot Recycling & Management
+*   **Description**: Refactor slot assignment to support sparse slot maps and player departures.
 *   **Changes**:
-    *   Implement a `player_stats` collection in the database.
-    *   Update the engine to report winners to the database when a game ends.
-*   **Testing**: Play multiple matches as the same player and verify the win count increments in the DB.
+    *   Modify join logic in `PySlapEngine` to identify the first available slot (e.g., `slot_0`, `slot_1`) instead of just using `len(slots)`.
+    *   Update `GameRules` to allow implementations to define slot priorities.
+*   **Testing**: Join 3 players, have the 2nd one leave, and verify the next player to join takes the 2nd slot.
 
-### 4. In-Game Chat System
-*   **Description**: Simple text communication between players during active sessions.
+### 29. Database Query Optimization
+*   **Description**: Improve the performance of JSON-based queries to prevent full table scans as the database grows.
 *   **Changes**:
-    *   Add a `chat` action type to the engine.
-    *   Store messages in a `messages` list within the `public_state` for real-time syncing.
-*   **Testing**: Send a chat action from one client and verify it appears in the display of the other client.
+    *   In `SQLiteDatabase`, implement indexing on frequently queried JSON paths (like `version` or `lobby_id`) using computed columns or partial indexes.
+*   **Testing**: Performance benchmark of `query` and `update` operations with 100,000+ records.
 
 
