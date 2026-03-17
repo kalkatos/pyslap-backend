@@ -92,3 +92,10 @@ class LocalEntrypoint (EntrypointInterface):
             
         return self.engine.db.query(collection, query_filters)
 
+    @ensure_role(Role.PLAYER)
+    def leave_session (self, session_id: str, player_id: str, token: str) -> bool:
+        """
+        Removes a player from the session.
+        """
+        return self.engine.leave_session(session_id, player_id, token)
+

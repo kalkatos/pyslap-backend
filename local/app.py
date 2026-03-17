@@ -72,6 +72,11 @@ class DataRequest(BaseModel):
     collection: str
     filters: Dict[str, Any]
 
+class LeaveRequest(BaseModel):
+    session_id: str
+    player_id: str
+    token: str
+
 # --- API Endpoints ---
 
 @app.post("/session")
@@ -118,6 +123,18 @@ async def get_data (req: DataRequest):
     try:
         data = entrypoint.get_data(req.session_id, req.player_id, req.token, req.collection, req.filters)
         return {"data": data}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/leave")
+async def leave_session (req: LeaveRequest):
+    try:
+        success = entrypoint.leave_session(req.session_id, req.player_id, req.token)
+        if not success:
+            raise HTTPException(status_code=403, detail="Failed to leave session.")
+        return {"status": "success"}
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:

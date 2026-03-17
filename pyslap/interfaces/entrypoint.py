@@ -20,3 +20,7 @@ class EntrypointInterface (ABC):
     @abstractmethod
     def get_data (self, session_id: str, player_id: str, token: str, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
         pass
+
+    @abstractmethod
+    def leave_session (self, session_id: str, player_id: str, token: str) -> bool:
+        pass

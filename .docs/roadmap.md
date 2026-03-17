@@ -96,11 +96,12 @@ Features already done are marked with ✅DONE
     *   Implement these in `LocalScheduler` and ensure `PySlapEngine` uses them during cleanup or re-entry.
 *   **Testing**: Schedule an update, cancel it, and verify the callback is never invoked.
 
-### 28. Slot Recycling & Management
+### ✅DONE 28. Slot Recycling & Management
 *   **Description**: Refactor slot assignment to support sparse slot maps and player departures.
 *   **Changes**:
-    *   Modify join logic in `PySlapEngine` to identify the first available slot (e.g., `slot_0`, `slot_1`) instead of just using `len(slots)`.
-    *   Update `GameRules` to allow implementations to define slot priorities.
+    *   Implement `leave_session` logic to vacate slots and allow priority-based recycling.
+    *   Modify join logic in `PySlapEngine` to identify the first available slot using `get_slot_priority`.
+    *   Fix matchmaking join race conditions and transaction handling.
 *   **Testing**: Join 3 players, have the 2nd one leave, and verify the next player to join takes the 2nd slot.
 
 ### 29. Database Query Optimization

@@ -12,7 +12,7 @@ from pyslap.core.validator import Validator
 from pyslap.core.game_rules import GameRules
 from pyslap.interfaces.database import DatabaseInterface
 from pyslap.interfaces.scheduler import SchedulerInterface
-from pyslap.models.domain import Action, GameConfig, GameState, Session, SessionStatus, Role, SessionResponse
+from pyslap.models.domain import Action, GameConfig, GameState, Session, SessionStatus, Role, SessionResponse, Player
 
 
 class PySlapEngine:
@@ -177,6 +177,9 @@ class PySlapEngine:
                                 # This should not happen if max_players is respected, but safety first.
                                 self.db.rollback()
                                 continue
+
+                            # Initialize player-specific state (private and potentially public adjustments)
+                            state = self.games[game_id].setup_player_state(state, player)
 
                             # Determine next status: ACTIVE if full, otherwise back to MATCHMAKING
                             if len(session.players) >= config.max_players:
@@ -731,3 +734,5 @@ class PySlapEngine:
                 return True
 
         return False # No available slots (should be blocked by max_players check)
+
+    # Framework-reserved action types handled natively by the engine.
