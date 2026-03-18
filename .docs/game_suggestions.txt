@@ -1,0 +1,21 @@
+1. Hidden Information & Card Games
+The private_state feature in PySlap is specifically built for games with "fog of war" or hidden hands.
+
+Poker (Texas Hold'em): Each player's hand is stored in their private_state, while the pot and community cards are public_state. apply_update_tick can manage turn timers (e.g., 15s to act before folding).
+Battleship: Your own ship grid is in your private_state, ensuring the opponent can never "cheat" by sniffing the network traffic, while hits/misses are tracked in public_state.
+2. Social Deduction & Party Games
+
+These games rely on secret roles and synchronized turn phases.
+
+Werewolf / Mafia: The framework’s phase logic can transition between "Night" (private actions for werewolves) and "Day" (public voting).
+Trivia / Quiz: Perfect for high-concurrency polling. Players submit answers as actions, and the server scores them during the apply_update_tick when the round timer expires.
+3. Strategy & Management (Async Real-Time)
+
+Games where "real-time" means updates every second, not every millisecond.
+
+Async Empire Builders (Travian/OGame style): apply_update_tick is ideal for passive resource generation (+10 Gold/min) and construction countdowns that finalize even when players are offline.
+Grid-Based Battle Royale: A top-down grid where players move every 1 second. You can use private_state to only send the coordinates of players who are within the current player's "vision radius."
+
+4. Tile-Laying & Board Games (Eurogames)
+
+Carcassonne / Catan clones: The validate_action method is perfect for the complex spatial logic required to ensure a road or tile is placed legally on a shared board.
