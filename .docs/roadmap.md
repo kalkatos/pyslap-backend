@@ -104,10 +104,62 @@ Features already done are marked with ✅DONE
     *   Fix matchmaking join race conditions and transaction handling.
 *   **Testing**: Join 3 players, have the 2nd one leave, and verify the next player to join takes the 2nd slot.
 
-### 29. Database Query Optimization
+### ✅DONE 29. Database Query Optimization
 *   **Description**: Improve the performance of JSON-based queries to prevent full table scans as the database grows.
 *   **Changes**:
     *   In `SQLiteDatabase`, implement indexing on frequently queried JSON paths (like `version` or `lobby_id`) using computed columns or partial indexes.
 *   **Testing**: Performance benchmark of `query` and `update` operations with 100,000+ records.
 
+---
+
+## 🐛 Bug Fixes (Post-Audit of #29)
+
+### 30. Fix Transaction Deadlock on Exception
+*   **Description**: `start_transaction` acquires `self._lock` directly but `commit`/`rollback` are the only release sites. An exception thrown between `start_transaction` and either method leaves the lock permanently held, deadlocking all subsequent operations.
+*   **Changes**:
+    *   Introduce a `transaction()` context manager (`__enter__`/`__exit__`) on `SQLiteDatabase` that guarantees `rollback` (and lock release) on any exception.
+    *   Replace bare `start_transaction` / `commit` / `rollback` call sites in the engine with `with db.transaction():`.
+*   **Testing**: Raise an exception inside a transaction block and verify subsequent operations are not blocked.
+
+### 31. Guard `_ensure_table_schema` on Read Paths
+*   **Description**: `_build_filter_clauses` emits generated column names (e.g., `WHERE status = ?`) based on the hardcoded `_COLLECTION_SCHEMA`, but `_ensure_table_schema` is only called from `create`. On an existing database whose tables predate the optimization, any call to `query`, `update`, `conditional_update`, or `delete_by_filter` that filters on an optimized field will raise `OperationalError: no such column`.
+*   **Changes**:
+    *   Call `_ensure_table_schema` at the top of `query`, `update`, `conditional_update`, and `delete_by_filter` (guarded by `_table_exists` as already done), so generated columns and indexes are guaranteed to exist before any filter is applied.
+*   **Testing**: Create a table manually (without generated columns), then call `query` with an optimized filter; verify it succeeds and the column is transparently added.
+
+### 32. Fix Unhandled Error When Index Creation Follows Silent Column Failure
+*   **Description**: In `_ensure_table_schema`, if `ALTER TABLE ADD COLUMN GENERATED ALWAYS AS` fails for any reason other than "duplicate column", the error is printed as a warning and execution continues. The subsequent `CREATE INDEX IF NOT EXISTS ... ON collection(field)` then references a non-existent column and raises an unhandled `OperationalError`.
+*   **Changes**:
+    *   Track which columns were successfully added (or already existed) in a local set inside `_ensure_table_schema`.
+    *   Only create an index for a field if its column is confirmed to exist.
+*   **Testing**: Simulate a column creation failure (e.g., mock `ALTER TABLE` to raise) and verify `_ensure_table_schema` completes without raising and that subsequent queries fall back to `json_extract`.
+
+### 33. Chunk `__in` Batches to Respect SQLite Variable Limit
+*   **Description**: `delete_by_filter` with `session_id__in` passes all expired session IDs as a single bind-parameter list. SQLite's `SQLITE_LIMIT_VARIABLE_NUMBER` is 999 on older versions (pre-3.32), causing a runtime crash when a cleanup pass exceeds that count.
+*   **Changes**:
+    *   In `_build_filter_clauses` (or in `delete_by_filter` before it calls the filter builder), split `__in` value lists into chunks of at most 999 and `UNION ALL` or loop the query/delete per chunk.
+    *   Alternatively, enforce chunking at the call site in `PySlapEngine._cleanup_old_records` before passing `batch_ids`.
+*   **Testing**: Run a cleanup with 2,000+ expired sessions and verify all related records are deleted without error.
+
+### 34. Remove Duplicate `create` Method (Merge Artifact)
+*   **Description**: `SQLiteDatabase` contains two `def create` definitions. The first (lines 73–83) is an incomplete leftover from a bad refactor; Python silently replaces it with the complete second definition. The orphaned code creates maintenance confusion and hides a misplaced block.
+*   **Changes**:
+    *   Delete the first (incomplete) `create` definition and the stray comment line that was left between it and `_COLLECTION_SCHEMA`.
+*   **Testing**: All existing `create`-related tests pass without modification.
+
+### 35. Cache Initialized Tables in `_ensure_table_schema`
+*   **Description**: `_ensure_table_schema` is called on every `create` and (after fix #31) on every read path. It unconditionally executes `PRAGMA table_info` plus N `CREATE INDEX IF NOT EXISTS` DDL statements per call. Under insert load this is measurable overhead inside the global lock.
+*   **Changes**:
+    *   Add a `_initialized_tables: set[str]` instance field.
+    *   At the top of `_ensure_table_schema`, return immediately if `collection` is already in the set.
+    *   Add the collection to the set after all columns and indexes are confirmed.
+*   **Testing**: Verify `PRAGMA table_info` is called at most once per collection per process lifetime under repeated inserts to the same collection.
+
+### 36. Stream-Delete in `delete_by_filter` Instead of Loading All Rows
+*   **Description**: `delete_by_filter` fetches all matching rows with `SELECT` before issuing `DELETE`, to return the deleted documents. For a cleanup of 100,000 expired sessions this loads all session JSON blobs into memory simultaneously. The engine only needs the IDs from the sessions result, not the full records.
+*   **Changes**:
+    *   Add an optional `return_ids_only: bool = False` parameter to `delete_by_filter`.
+    *   When `True`, issue `SELECT record_id` instead of `SELECT data`, and return lightweight `[{"id": rid}]` dicts.
+    *   Update `PySlapEngine._cleanup_old_records` to use `return_ids_only=True` when deleting sessions, since it only uses `s["id"]` from the result.
+*   **Testing**: Run cleanup with 100,000+ expired sessions and verify peak memory does not scale with record count when `return_ids_only=True`.
 
