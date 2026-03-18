@@ -127,7 +127,7 @@ Features already done are marked with ✅DONE
     *   Call `_ensure_table_schema` at the top of `query`, `update`, `conditional_update`, and `delete_by_filter` (guarded by `_table_exists` as already done), so generated columns and indexes are guaranteed to exist before any filter is applied.
 *   **Testing**: Create a table manually (without generated columns), then call `query` with an optimized filter; verify it succeeds and the column is transparently added.
 
-### 32. Fix Unhandled Error When Index Creation Follows Silent Column Failure
+### ✅DONE 32. Fix Unhandled Error When Index Creation Follows Silent Column Failure
 *   **Description**: In `_ensure_table_schema`, if `ALTER TABLE ADD COLUMN GENERATED ALWAYS AS` fails for any reason other than "duplicate column", the error is printed as a warning and execution continues. The subsequent `CREATE INDEX IF NOT EXISTS ... ON collection(field)` then references a non-existent column and raises an unhandled `OperationalError`.
 *   **Changes**:
     *   Track which columns were successfully added (or already existed) in a local set inside `_ensure_table_schema`.

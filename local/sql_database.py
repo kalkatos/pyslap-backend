@@ -113,7 +113,8 @@ class SQLiteDatabase(DatabaseInterface):
         cursor = conn.execute(f'PRAGMA table_info("{collection}")')
         existing_cols = {row["name"] for row in cursor.fetchall()}
 
-        # 3. Add missing generated columns
+        # 3. Add missing generated columns; track which ones are confirmed to exist
+        confirmed_cols = set(existing_cols)
         for field, col_type in schema.items():
             if field not in existing_cols:
                 try:
@@ -121,16 +122,19 @@ class SQLiteDatabase(DatabaseInterface):
                         f'ALTER TABLE "{collection}" ADD COLUMN {field} {col_type} '
                         f'GENERATED ALWAYS AS (json_extract(data, "$.{field}")) VIRTUAL'
                     )
+                    confirmed_cols.add(field)
                 except sqlite3.OperationalError as e:
-                    # If it fails (e.g. duplicate or older SQLite skip gracefully)
-                    if "duplicate column" not in str(e).lower():
+                    if "duplicate column" in str(e).lower():
+                        confirmed_cols.add(field)
+                    else:
                         print(f"Warning: Could not add generated column {field} to {collection}: {e}")
 
-        # 4. Create indexes on generated columns
+        # 4. Create indexes only for columns confirmed to exist
         for field in schema.keys():
-            conn.execute(
-                f'CREATE INDEX IF NOT EXISTS "idx_{collection}_{field}" ON "{collection}"({field})'
-            )
+            if field in confirmed_cols:
+                conn.execute(
+                    f'CREATE INDEX IF NOT EXISTS "idx_{collection}_{field}" ON "{collection}"({field})'
+                )
 
     def create (self, collection: str, data: dict[str, Any], fail_if_exists: bool = False) -> Optional[str]:
         # Use an existing id if provided, otherwise generate a new one
