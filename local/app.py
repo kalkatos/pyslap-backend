@@ -14,13 +14,15 @@ from local.local_scheduler import LocalScheduler
 from local.sql_database import SQLiteDatabase
 from local.local_entrypoint import LocalEntrypoint
 from games.rps import RpsGameRules
+from games.battleship import BattleshipGameRules
 
 # Initialize components
 db = SQLiteDatabase()
 scheduler = LocalScheduler()
 # Register games
 games_registry = {
-    "rps": RpsGameRules()
+    "rps": RpsGameRules(),
+    "battleship": BattleshipGameRules()
 }
 
 # Initialize Engine and Entrypoint
