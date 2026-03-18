@@ -121,7 +121,7 @@ Features already done are marked with ✅DONE
     *   Replace bare `start_transaction` / `commit` / `rollback` call sites in the engine with `with db.transaction():`.
 *   **Testing**: Raise an exception inside a transaction block and verify subsequent operations are not blocked.
 
-### 31. Guard `_ensure_table_schema` on Read Paths
+### ✅DONE 31. Guard `_ensure_table_schema` on Read Paths
 *   **Description**: `_build_filter_clauses` emits generated column names (e.g., `WHERE status = ?`) based on the hardcoded `_COLLECTION_SCHEMA`, but `_ensure_table_schema` is only called from `create`. On an existing database whose tables predate the optimization, any call to `query`, `update`, `conditional_update`, or `delete_by_filter` that filters on an optimized field will raise `OperationalError: no such column`.
 *   **Changes**:
     *   Call `_ensure_table_schema` at the top of `query`, `update`, `conditional_update`, and `delete_by_filter` (guarded by `_table_exists` as already done), so generated columns and indexes are guaranteed to exist before any filter is applied.

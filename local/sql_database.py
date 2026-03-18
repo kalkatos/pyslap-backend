@@ -186,6 +186,9 @@ class SQLiteDatabase(DatabaseInterface):
             if not self._table_exists(conn, collection):
                 return False
 
+            # Ensure optimized generated columns exist for this collection
+            self._ensure_table_schema(conn, collection)
+
             if expected_version is not None:
                 # Use optimized generated column if available, otherwise fallback to json_extract
                 schema = self._COLLECTION_SCHEMA.get(collection, {})
@@ -225,6 +228,9 @@ class SQLiteDatabase(DatabaseInterface):
             conn = self._get_connection()
             if not self._table_exists(conn, collection):
                 return False
+
+            # Ensure optimized generated columns exist for this collection
+            self._ensure_table_schema(conn, collection)
 
             cursor = conn.execute(
                 f'UPDATE "{collection}" SET timestamp = ?, data = ?{where_sql}',
@@ -308,6 +314,9 @@ class SQLiteDatabase(DatabaseInterface):
             if not self._table_exists(conn, collection):
                 return []
 
+            # Ensure optimized generated columns exist for this collection
+            self._ensure_table_schema(conn, collection)
+
             # Fetch matching rows first so we can return them
             cursor = conn.execute(
                 f'SELECT data FROM "{collection}"{where_sql}', params
@@ -331,6 +340,9 @@ class SQLiteDatabase(DatabaseInterface):
             conn = self._get_connection()
             if not self._table_exists(conn, collection):
                 return []
+
+            # Ensure optimized generated columns exist for this collection
+            self._ensure_table_schema(conn, collection)
 
             cursor = conn.execute(
                 f'SELECT data FROM "{collection}"{where_sql}', params

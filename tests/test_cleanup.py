@@ -1,4 +1,5 @@
 import time
+import json
 from unittest.mock import MagicMock
 
 from pyslap.core.engine import PySlapEngine
@@ -215,6 +216,27 @@ class TestSQLiteDeleteByFilter:
         assert deleted == []
         remaining = db.query("items", {})
         assert len(remaining) == 1
+
+    def test_query_and_update_trigger_schema_creation_for_existing_tables(self):
+        db = self._make_db()
+        conn = db._get_connection()
+        # Create table manually without generated columns
+        conn.execute('CREATE TABLE sessions (record_id TEXT PRIMARY KEY, timestamp REAL, data TEXT)')
+        conn.execute(
+            'INSERT INTO sessions (record_id, timestamp, data) VALUES (?, ?, ?)',
+            ("s1", time.time(), json.dumps({"id": "s1", "status": "OPEN", "version": 1})),
+        )
+        conn.commit()
+
+        # Query should succeed even though the optimized 'status' column didn't exist prior
+        result = db.query("sessions", {"status": "OPEN"})
+        assert len(result) == 1
+        assert result[0]["id"] == "s1"
+
+        # Update with expected_version should also work using the generated 'version' column
+        updated = db.update("sessions", "s1", {"id": "s1", "status": "OPEN", "version": 2}, expected_version=1)
+        assert updated
+        assert db.read("sessions", "s1")["version"] == 2
 
 
 class TestCleanupIntegration:
