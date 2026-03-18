@@ -13,6 +13,28 @@ import jwt
 import httpx
 from typing import Any, List, Dict
 
+# Helpers to keep client independent of server-side logic
+def _is_valid_placement (x: int, y: int, length: int, orientation: str, existing_board: List[List[str]]) -> bool:
+    if orientation == 'H':
+        if x + length > 10: return False
+        for i in range(length):
+            if existing_board[y][x + i] != "": return False
+    elif orientation == 'V':
+        if y + length > 10: return False
+        for i in range(length):
+            if existing_board[y + i][x] != "": return False
+    else:
+        return False
+    return True
+
+def _place_ship (x: int, y: int, length: int, orientation: str, ship_name: str, board: List[List[str]]):
+    if orientation == 'H':
+        for i in range(length):
+            board[y][x + i] = ship_name
+    else:
+        for i in range(length):
+            board[y + i][x] = ship_name
+
 GRID_SIZE = 10
 SHIPS_CONFIG = {
     "Carrier": 5,
@@ -153,7 +175,6 @@ async def run_client (config: dict):
                         # Generate random valid placement
                         import random as lrand
                         temp_board = [["" for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
-                        from games.battleship import _is_valid_placement, _place_ship
                         for name, length in SHIPS_CONFIG.items():
                             while True:
                                 x, y, o = lrand.randint(0,9), lrand.randint(0,9), lrand.choice(['H', 'V'])
