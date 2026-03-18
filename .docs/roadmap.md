@@ -114,7 +114,7 @@ Features already done are marked with ✅DONE
 
 ## 🐛 Bug Fixes (Post-Audit of #29)
 
-### 30. Fix Transaction Deadlock on Exception
+### ✅DONE 30. Fix Transaction Deadlock on Exception
 *   **Description**: `start_transaction` acquires `self._lock` directly but `commit`/`rollback` are the only release sites. An exception thrown between `start_transaction` and either method leaves the lock permanently held, deadlocking all subsequent operations.
 *   **Changes**:
     *   Introduce a `transaction()` context manager (`__enter__`/`__exit__`) on `SQLiteDatabase` that guarantees `rollback` (and lock release) on any exception.

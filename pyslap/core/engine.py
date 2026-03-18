@@ -15,6 +15,11 @@ from pyslap.interfaces.scheduler import SchedulerInterface
 from pyslap.models.domain import Action, GameConfig, GameState, Session, SessionStatus, Role, SessionResponse, Player
 
 
+class _RollbackAndSkip(Exception):
+    """Sentinel to abort a transaction block and continue to the next loop iteration."""
+    pass
+
+
 class PySlapEngine:
     """
     The orchestrator of the PySlap framework.
@@ -170,43 +175,38 @@ class PySlapEngine:
                         state_data.pop("id", None)
                         state = GameState(**state_data)
 
-                        self.db.start_transaction()
                         try:
-                            # Assign sticky slot if not already assigned
-                            if not self._assign_player_slot(state, player, config, self.games[game_id]):
-                                # This should not happen if max_players is respected, but safety first.
-                                self.db.rollback()
-                                continue
+                            with self.db.transaction():
+                                # Assign sticky slot if not already assigned
+                                if not self._assign_player_slot(state, player, config, self.games[game_id]):
+                                    # This should not happen if max_players is respected, but safety first.
+                                    raise _RollbackAndSkip()
 
-                            # Initialize player-specific state (private and potentially public adjustments)
-                            state = self.games[game_id].setup_player_state(state, player)
+                                # Initialize player-specific state (private and potentially public adjustments)
+                                state = self.games[game_id].setup_player_state(state, player)
 
-                            # Determine next status: ACTIVE if full, otherwise back to MATCHMAKING
-                            if len(session.players) >= config.max_players:
-                                session.status = SessionStatus.ACTIVE
-                            else:
-                                session.status = SessionStatus.MATCHMAKING
+                                # Determine next status: ACTIVE if full, otherwise back to MATCHMAKING
+                                if len(session.players) >= config.max_players:
+                                    session.status = SessionStatus.ACTIVE
+                                else:
+                                    session.status = SessionStatus.MATCHMAKING
 
-                            session.version = current_version + 1
-                            updated_session_data = asdict(session)
-                            updated_session_data["id"] = s_id
+                                session.version = current_version + 1
+                                updated_session_data = asdict(session)
+                                updated_session_data["id"] = s_id
 
-                            # Final update for session (releases claim via status change)
-                            if not self.db.update("sessions", s_id, updated_session_data,
-                                                expected_version=current_version):
-                                # This shouldn't happen if CLAIMED status is respected, but safety first.
-                                self.db.rollback()
-                                continue
+                                # Final update for session (releases claim via status change)
+                                if not self.db.update("sessions", s_id, updated_session_data,
+                                                    expected_version=current_version):
+                                    # This shouldn't happen if CLAIMED status is respected, but safety first.
+                                    raise _RollbackAndSkip()
 
-                            # Update state
-                            updated_state_data = asdict(state)
-                            updated_state_data["id"] = s_id
-                            self.db.update("states", s_id, updated_state_data)
-                            
-                            self.db.commit()
-                        except Exception:
-                            self.db.rollback()
-                            raise
+                                # Update state
+                                updated_state_data = asdict(state)
+                                updated_state_data["id"] = s_id
+                                self.db.update("states", s_id, updated_state_data)
+                        except _RollbackAndSkip:
+                            continue
 
                         client_state = state.to_player_state(player.player_id)
                         return SessionResponse(
@@ -215,7 +215,7 @@ class PySlapEngine:
                             state=client_state,
                             lobby_id=session.lobby_id
                         )
-                    
+
                     except Exception:
                         # If anything fails during join while claimed, we MUST release the claim
                         # by putting it back to MATCHMAKING (best effort).
@@ -276,14 +276,9 @@ class PySlapEngine:
         state_data = asdict(game_state)
         state_data["id"] = session_id
 
-        self.db.start_transaction()
-        try:
+        with self.db.transaction():
             self.db.create("sessions", session_data)
             self.db.create("states", state_data)
-            self.db.commit()
-        except Exception:
-            self.db.rollback()
-            raise
 
         # Schedule the first update loop using the interface
         self.scheduler.schedule_next_update(session_id, config.update_interval_ms)
@@ -327,11 +322,10 @@ class PySlapEngine:
         config_data.pop("game_id", None)
         config = GameConfig(game_id=session.game_id, **config_data)
 
-        self.db.start_transaction()
-        try:
+        with self.db.transaction():
             # 1. Update Session
             session.players.pop(player_id, None)
-            
+
             # If the session was ACTIVE and now has room, put it back to MATCHMAKING
             # to allow others to join via matchmaking.
             if session.status == SessionStatus.ACTIVE and len(session.players) < config.max_players:
@@ -348,23 +342,19 @@ class PySlapEngine:
                 if p_id == player_id:
                     slot_to_vacate = slot_id
                     break
-            
+
             if slot_to_vacate:
                 state.slots.pop(slot_to_vacate)
-            
+
             updated_state_data = asdict(state)
             updated_state_data["id"] = session_id
             self.db.update("states", session_id, updated_state_data)
-            
+
             # 3. Cleanup nonces and acks
             self.db.delete_by_filter("nonces", {"session_id": session_id, "player_id": player_id})
             state.phase_ack.pop(player_id, None)
 
-            self.db.commit()
             return True
-        except Exception:
-            self.db.rollback()
-            raise
 
     def _assign_player_slot (self, state: GameState, player: Player, config: GameConfig, rules: GameRules) -> bool:
         """
@@ -605,8 +595,7 @@ class PySlapEngine:
         )
 
         # 4. Apply Updates
-        self.db.start_transaction()
-        try:
+        with self.db.transaction():
             # Create deterministic RNG from saved seed
             rng = random.Random(state.random_seed)
 
@@ -699,7 +688,6 @@ class PySlapEngine:
 
                 self.db.update("sessions", session_id, session_data)
                 self.db.update("states", session_id, state_data)
-                self.db.commit()
                 return  # Exit loop
 
             # 6. Save State and Reschedule
@@ -709,11 +697,6 @@ class PySlapEngine:
             state_data = asdict(state)
             state_data["id"] = session_id
             self.db.update("states", session_id, state_data)
-            
-            self.db.commit()
-        except Exception:
-            self.db.rollback()
-            raise
 
         # Enforce serverless minimum interval requirement (>=500ms)
         delay_ms = max(config.update_interval_ms, self.MINIMUM_UPDATE_INTERVAL_MS)

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from typing import Any, Optional
 
 
@@ -93,6 +94,21 @@ class DatabaseInterface(ABC):
         Reverts all changes made during the current transaction.
         """
         pass
+
+    @contextmanager
+    def transaction (self):
+        """
+        Context manager that wraps a block in a transaction.
+        Commits on success, rolls back (and re-raises) on any exception.
+        Guarantees the lock is always released regardless of what happens inside the block.
+        """
+        self.start_transaction()
+        try:
+            yield
+            self.commit()
+        except Exception:
+            self.rollback()
+            raise
 
     @abstractmethod
     def delete_by_filter (self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
