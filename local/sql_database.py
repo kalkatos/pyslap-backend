@@ -70,18 +70,6 @@ class SQLiteDatabase(DatabaseInterface):
         except OSError:
             pass
 
-    def create (self, collection: str, data: dict[str, Any], fail_if_exists: bool = False) -> Optional[str]:
-        # Use an existing id if provided, otherwise generate a new one
-        record_id = data.get("id", str(uuid.uuid4()))
-        if "id" not in data:
-            data["id"] = record_id
-
-        insert_sql = 'INSERT INTO' if fail_if_exists else 'INSERT OR REPLACE INTO'
-
-        with self._lock:
-            conn = self._get_connection()
-            # Retry loop for potential locked database
-    # Define frequently queried fields to be optimized with generated columns and indexes
     _COLLECTION_SCHEMA = {
         "sessions": {
             "game_id": "TEXT",

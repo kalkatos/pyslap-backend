@@ -141,7 +141,7 @@ Features already done are marked with ✅DONE
     *   Alternatively, enforce chunking at the call site in `PySlapEngine._cleanup_old_records` before passing `batch_ids`.
 *   **Testing**: Run a cleanup with 2,000+ expired sessions and verify all related records are deleted without error.
 
-### 34. Remove Duplicate `create` Method (Merge Artifact)
+### ✅DONE 34. Remove Duplicate `create` Method (Merge Artifact)
 *   **Description**: `SQLiteDatabase` contains two `def create` definitions. The first (lines 73–83) is an incomplete leftover from a bad refactor; Python silently replaces it with the complete second definition. The orphaned code creates maintenance confusion and hides a misplaced block.
 *   **Changes**:
     *   Delete the first (incomplete) `create` definition and the stray comment line that was left between it and `_COLLECTION_SCHEMA`.
