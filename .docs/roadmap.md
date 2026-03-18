@@ -155,7 +155,7 @@ Features already done are marked with ✅DONE
     *   Add the collection to the set after all columns and indexes are confirmed.
 *   **Testing**: Verify `PRAGMA table_info` is called at most once per collection per process lifetime under repeated inserts to the same collection.
 
-### 36. Stream-Delete in `delete_by_filter` Instead of Loading All Rows
+### ✅DONE 36. Stream-Delete in `delete_by_filter` Instead of Loading All Rows
 *   **Description**: `delete_by_filter` fetches all matching rows with `SELECT` before issuing `DELETE`, to return the deleted documents. For a cleanup of 100,000 expired sessions this loads all session JSON blobs into memory simultaneously. The engine only needs the IDs from the sessions result, not the full records.
 *   **Changes**:
     *   Add an optional `return_ids_only: bool = False` parameter to `delete_by_filter`.

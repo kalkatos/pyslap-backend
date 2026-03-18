@@ -101,16 +101,18 @@ class SQLiteDatabase(DatabaseInterface):
         """
         Ensures the table exists and has all optimized generated columns and indexes.
         """
-        if collection in self._initialized_tables:
-            return
-
-        # 1. Create base table if needed
+        # Always create the base table — this is cheap and idempotent.
         conn.execute(
             f'CREATE TABLE IF NOT EXISTS "{collection}" (record_id TEXT PRIMARY KEY, timestamp REAL, data TEXT)'
         )
 
+        # The expensive PRAGMA + ALTER + CREATE INDEX work is only done once per process lifetime.
+        if collection in self._initialized_tables:
+            return
+
         schema = self._COLLECTION_SCHEMA.get(collection, {})
         if not schema:
+            self._initialized_tables.add(collection)
             return
 
         # 2. Check existing columns
@@ -316,8 +318,16 @@ class SQLiteDatabase(DatabaseInterface):
         where_sql = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         return where_sql, params
 
-    def delete_by_filter (self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
+    def delete_by_filter (self, collection: str, filters: dict[str, Any],
+                          return_ids_only: bool = False) -> list[dict[str, Any]]:
         SQLITE_VARIABLE_LIMIT = 999
+
+        select_col = "record_id" if return_ids_only else "data"
+
+        def _rows_to_docs(rows) -> list[dict[str, Any]]:
+            if return_ids_only:
+                return [{"id": row["record_id"]} for row in rows]
+            return [json.loads(row["data"]) for row in rows]
 
         # Identify if there is a single large '__in' filter that needs chunking.
         in_filter_key: Optional[str] = None
@@ -342,9 +352,9 @@ class SQLiteDatabase(DatabaseInterface):
                     return []
 
                 self._ensure_table_schema(conn, collection)
-                cursor = conn.execute(f'SELECT data FROM "{collection}"{where_sql}', params)
+                cursor = conn.execute(f'SELECT {select_col} FROM "{collection}"{where_sql}', params)
                 rows = cursor.fetchall()
-                deleted = [json.loads(row["data"]) for row in rows]
+                deleted = _rows_to_docs(rows)
 
                 if deleted:
                     conn.execute(f'DELETE FROM "{collection}"{where_sql}', params)
@@ -360,12 +370,12 @@ class SQLiteDatabase(DatabaseInterface):
 
         for i in range(0, len(in_filter_values), SQLITE_VARIABLE_LIMIT):
             chunk_values = in_filter_values[i : i + SQLITE_VARIABLE_LIMIT]
-            
+
             current_filters = other_filters.copy()
             current_filters[in_filter_key] = chunk_values
-            
+
             where_sql, params = self._build_filter_clauses(collection, current_filters)
-            
+
             with self._lock:
                 conn = self._get_connection()
                 if not self._table_exists(conn, collection):
@@ -373,15 +383,15 @@ class SQLiteDatabase(DatabaseInterface):
 
                 self._ensure_table_schema(conn, collection)
 
-                cursor = conn.execute(f'SELECT data FROM "{collection}"{where_sql}', params)
+                cursor = conn.execute(f'SELECT {select_col} FROM "{collection}"{where_sql}', params)
                 rows = cursor.fetchall()
-                deleted_chunk = [json.loads(row["data"]) for row in rows]
+                deleted_chunk = _rows_to_docs(rows)
 
                 if deleted_chunk:
                     conn.execute(f'DELETE FROM "{collection}"{where_sql}', params)
                     if not self._in_transaction:
                         conn.commit()
-                
+
                 all_deleted.extend(deleted_chunk)
 
         return all_deleted

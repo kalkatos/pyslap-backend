@@ -72,7 +72,7 @@ class PySlapEngine:
         cutoff = time.time() - max_age_sec
 
         # 1. Server-side filtered query: fetch and delete sessions matching the age criterion
-        old_sessions = self.db.delete_by_filter("sessions", {"created_at__lt": cutoff})
+        old_sessions = self.db.delete_by_filter("sessions", {"created_at__lt": cutoff}, return_ids_only=True)
         if not old_sessions:
             return 0
 

@@ -60,7 +60,7 @@ class TestCleanupOldRecords:
         # Simulate delete_by_filter returning old sessions, then actions
         old_session = {"id": "old_session_1", "created_at": 1000.0, "game_id": "dummy"}
 
-        def mock_delete_by_filter(collection, filters):
+        def mock_delete_by_filter(collection, filters, **kwargs):
             if collection == "sessions":
                 return [old_session]
             if collection == "actions":
@@ -118,7 +118,7 @@ class TestCleanupOldRecords:
             {"id": "old_3", "created_at": 300.0},
         ]
 
-        def mock_delete_by_filter(collection, filters):
+        def mock_delete_by_filter(collection, filters, **kwargs):
             if collection == "sessions":
                 return old_sessions
             return []  # No actions for these sessions

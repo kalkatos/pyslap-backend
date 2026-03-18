@@ -111,10 +111,14 @@ class DatabaseInterface(ABC):
             raise
 
     @abstractmethod
-    def delete_by_filter (self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
+    def delete_by_filter (self, collection: str, filters: dict[str, Any],
+                          return_ids_only: bool = False) -> list[dict[str, Any]]:
         """
         Deletes all records matching the provided filters and returns the
         deleted records.
+
+        When `return_ids_only=True`, returns lightweight `[{"id": rid}]` dicts
+        instead of full records, avoiding loading large JSON blobs into memory.
 
         Supports comparison operators via suffixed keys:
           - "field__lt": value  →  field < value
