@@ -81,11 +81,83 @@ class SQLiteDatabase(DatabaseInterface):
         with self._lock:
             conn = self._get_connection()
             # Retry loop for potential locked database
-            for _ in range(5):
+    # Define frequently queried fields to be optimized with generated columns and indexes
+    _COLLECTION_SCHEMA = {
+        "sessions": {
+            "game_id": "TEXT",
+            "status": "TEXT",
+            "lobby_id": "TEXT",
+            "created_at": "REAL",
+            "version": "INTEGER",
+        },
+        "actions": {
+            "session_id": "TEXT",
+            "processed": "INTEGER",
+        },
+        "rate_limits": {
+            "session_id": "TEXT",
+            "last_action_at": "REAL",
+        },
+        "locks": {
+            "session_id": "TEXT",
+            "version": "INTEGER",
+        },
+        "nonces": {
+            "session_id": "TEXT",
+            "player_id": "TEXT",
+        },
+    }
+
+    def _ensure_table_schema (self, conn, collection: str):
+        """
+        Ensures the table exists and has all optimized generated columns and indexes.
+        """
+        # 1. Create base table if needed
+        conn.execute(
+            f'CREATE TABLE IF NOT EXISTS "{collection}" (record_id TEXT PRIMARY KEY, timestamp REAL, data TEXT)'
+        )
+
+        schema = self._COLLECTION_SCHEMA.get(collection, {})
+        if not schema:
+            return
+
+        # 2. Check existing columns
+        cursor = conn.execute(f'PRAGMA table_info("{collection}")')
+        existing_cols = {row["name"] for row in cursor.fetchall()}
+
+        # 3. Add missing generated columns
+        for field, col_type in schema.items():
+            if field not in existing_cols:
                 try:
                     conn.execute(
-                        f'CREATE TABLE IF NOT EXISTS "{collection}" (record_id TEXT PRIMARY KEY, timestamp REAL, data TEXT)'
+                        f'ALTER TABLE "{collection}" ADD COLUMN {field} {col_type} '
+                        f'GENERATED ALWAYS AS (json_extract(data, "$.{field}")) VIRTUAL'
                     )
+                except sqlite3.OperationalError as e:
+                    # If it fails (e.g. duplicate or older SQLite skip gracefully)
+                    if "duplicate column" not in str(e).lower():
+                        print(f"Warning: Could not add generated column {field} to {collection}: {e}")
+
+        # 4. Create indexes on generated columns
+        for field in schema.keys():
+            conn.execute(
+                f'CREATE INDEX IF NOT EXISTS "idx_{collection}_{field}" ON "{collection}"({field})'
+            )
+
+    def create (self, collection: str, data: dict[str, Any], fail_if_exists: bool = False) -> Optional[str]:
+        # Use an existing id if provided, otherwise generate a new one
+        record_id = data.get("id", str(uuid.uuid4()))
+        if "id" not in data:
+            data["id"] = record_id
+
+        insert_sql = 'INSERT INTO' if fail_if_exists else 'INSERT OR REPLACE INTO'
+
+        with self._lock:
+            conn = self._get_connection()
+            # Retry loop for potential locked database
+            for _ in range(5):
+                try:
+                    self._ensure_table_schema(conn, collection)
                     conn.execute(
                         f'{insert_sql} "{collection}" (record_id, timestamp, data) VALUES (?, ?, ?)',
                         (record_id, time.time(), json.dumps(data)),
@@ -127,9 +199,15 @@ class SQLiteDatabase(DatabaseInterface):
                 return False
 
             if expected_version is not None:
-                # Use SQLite's json_extract to check the version in the JSON data column atomically
+                # Use optimized generated column if available, otherwise fallback to json_extract
+                schema = self._COLLECTION_SCHEMA.get(collection, {})
+                if "version" in schema:
+                    where_clause = "version = ?"
+                else:
+                    where_clause = 'json_extract(data, "$.version") = ?'
+
                 cursor = conn.execute(
-                    f'UPDATE "{collection}" SET timestamp = ?, data = ? WHERE record_id = ? AND json_extract(data, "$.version") = ?',
+                    f'UPDATE "{collection}" SET timestamp = ?, data = ? WHERE record_id = ? AND {where_clause}',
                     (time.time(), json.dumps(data), record_id, expected_version),
                 )
             else:
@@ -144,7 +222,7 @@ class SQLiteDatabase(DatabaseInterface):
 
     def conditional_update (self, collection: str, record_id: str, data: dict[str, Any],
                            filters: dict[str, Any]) -> bool:
-        where_sql, params = self._build_filter_clauses(filters)
+        where_sql, params = self._build_filter_clauses(collection, filters)
         
         # Ensure record_id is included in the condition
         if not where_sql:
@@ -185,14 +263,16 @@ class SQLiteDatabase(DatabaseInterface):
     # Operator suffixes supported by delete_by_filter and _build_filter_clauses
     _OPERATORS = {"__lt": "<", "__lte": "<=", "__gt": ">", "__gte": ">=", "__ne": "!=", "__in": "IN"}
 
-    def _build_filter_clauses (self, filters: dict[str, Any]) -> tuple[str, list[Any]]:
+    def _build_filter_clauses (self, collection: str, filters: dict[str, Any]) -> tuple[str, list[Any]]:
         """
-        Translates a filter dict into SQL WHERE clauses using json_extract.
+        Translates a filter dict into SQL WHERE clauses using indexed generated columns or json_extract.
         Returns (where_sql, params) — where_sql includes the leading ' WHERE '
         if any filters are present, or an empty string otherwise.
         """
         clauses: list[str] = []
         params: list[Any] = []
+        
+        col_schema = self._COLLECTION_SCHEMA.get(collection, {})
 
         for key, value in filters.items():
             sql_op = "="
@@ -203,8 +283,15 @@ class SQLiteDatabase(DatabaseInterface):
                     field = key[: -len(suffix)]
                     break
 
-            # Use indexed record_id column for 'id' field for performance
-            target_col = "record_id" if field == "id" else f'json_extract(data, "$.{field}")'
+            # Optimization: Use record_id for 'id' field, 
+            # use generated column if it exists, 
+            # otherwise fallback to json_extract.
+            if field == "id":
+                target_col = "record_id"
+            elif field in col_schema:
+                target_col = field
+            else:
+                target_col = f'json_extract(data, "$.{field}")'
 
             if sql_op == "IN":
                 if not isinstance(value, (list, tuple)):
@@ -226,7 +313,7 @@ class SQLiteDatabase(DatabaseInterface):
         return where_sql, params
 
     def delete_by_filter (self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
-        where_sql, params = self._build_filter_clauses(filters)
+        where_sql, params = self._build_filter_clauses(collection, filters)
 
         with self._lock:
             conn = self._get_connection()
@@ -250,7 +337,7 @@ class SQLiteDatabase(DatabaseInterface):
         return deleted
 
     def query (self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
-        where_sql, params = self._build_filter_clauses(filters)
+        where_sql, params = self._build_filter_clauses(collection, filters)
 
         with self._lock:
             conn = self._get_connection()
