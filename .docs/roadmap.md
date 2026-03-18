@@ -147,7 +147,7 @@ Features already done are marked with ✅DONE
     *   Delete the first (incomplete) `create` definition and the stray comment line that was left between it and `_COLLECTION_SCHEMA`.
 *   **Testing**: All existing `create`-related tests pass without modification.
 
-### 35. Cache Initialized Tables in `_ensure_table_schema`
+### ✅DONE 35. Cache Initialized Tables in `_ensure_table_schema`
 *   **Description**: `_ensure_table_schema` is called on every `create` and (after fix #31) on every read path. It unconditionally executes `PRAGMA table_info` plus N `CREATE INDEX IF NOT EXISTS` DDL statements per call. Under insert load this is measurable overhead inside the global lock.
 *   **Changes**:
     *   Add a `_initialized_tables: set[str]` instance field.

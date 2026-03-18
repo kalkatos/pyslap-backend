@@ -21,6 +21,7 @@ class SQLiteDatabase(DatabaseInterface):
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.RLock()
         self._in_transaction = False
+        self._initialized_tables: set[str] = set()
         self._init_db()
 
     def _get_connection (self):
@@ -100,6 +101,9 @@ class SQLiteDatabase(DatabaseInterface):
         """
         Ensures the table exists and has all optimized generated columns and indexes.
         """
+        if collection in self._initialized_tables:
+            return
+
         # 1. Create base table if needed
         conn.execute(
             f'CREATE TABLE IF NOT EXISTS "{collection}" (record_id TEXT PRIMARY KEY, timestamp REAL, data TEXT)'
@@ -135,6 +139,8 @@ class SQLiteDatabase(DatabaseInterface):
                 conn.execute(
                     f'CREATE INDEX IF NOT EXISTS "idx_{collection}_{field}" ON "{collection}"({field})'
                 )
+
+        self._initialized_tables.add(collection)
 
     def create (self, collection: str, data: dict[str, Any], fail_if_exists: bool = False) -> Optional[str]:
         # Use an existing id if provided, otherwise generate a new one
