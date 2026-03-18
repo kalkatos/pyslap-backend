@@ -311,31 +311,74 @@ class SQLiteDatabase(DatabaseInterface):
         return where_sql, params
 
     def delete_by_filter (self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
-        where_sql, params = self._build_filter_clauses(collection, filters)
+        SQLITE_VARIABLE_LIMIT = 999
 
-        with self._lock:
-            conn = self._get_connection()
-            if not self._table_exists(conn, collection):
-                return []
+        # Identify if there is a single large '__in' filter that needs chunking.
+        in_filter_key: Optional[str] = None
+        in_filter_values: list = []
+        for key, value in filters.items():
+            if key.endswith("__in") and isinstance(value, (list, tuple)) and len(value) > SQLITE_VARIABLE_LIMIT:
+                if in_filter_key is not None:
+                    # This simple chunking logic supports only one oversized '__in' filter per call.
+                    # For more complex scenarios, a more advanced query builder would be needed.
+                    in_filter_key = None
+                    break
+                in_filter_key = key
+                in_filter_values = list(value)
 
-            # Ensure optimized generated columns exist for this collection
-            self._ensure_table_schema(conn, collection)
+        # If no oversized '__in' filter is found, use the standard non-chunked logic.
+        if in_filter_key is None:
+            where_sql, params = self._build_filter_clauses(collection, filters)
 
-            # Fetch matching rows first so we can return them
-            cursor = conn.execute(
-                f'SELECT data FROM "{collection}"{where_sql}', params
-            )
-            rows = cursor.fetchall()
-            deleted = [json.loads(row["data"]) for row in rows]
+            with self._lock:
+                conn = self._get_connection()
+                if not self._table_exists(conn, collection):
+                    return []
 
-            if deleted:
-                conn.execute(
-                    f'DELETE FROM "{collection}"{where_sql}', params
-                )
-                if not self._in_transaction:
-                    conn.commit()
+                self._ensure_table_schema(conn, collection)
+                cursor = conn.execute(f'SELECT data FROM "{collection}"{where_sql}', params)
+                rows = cursor.fetchall()
+                deleted = [json.loads(row["data"]) for row in rows]
 
-        return deleted
+                if deleted:
+                    conn.execute(f'DELETE FROM "{collection}"{where_sql}', params)
+                    if not self._in_transaction:
+                        conn.commit()
+            return deleted
+
+        # --- Chunking Logic ---
+        # Handle oversized '__in' filter by splitting it into multiple queries.
+        all_deleted = []
+        other_filters = filters.copy()
+        other_filters.pop(in_filter_key)
+
+        for i in range(0, len(in_filter_values), SQLITE_VARIABLE_LIMIT):
+            chunk_values = in_filter_values[i : i + SQLITE_VARIABLE_LIMIT]
+            
+            current_filters = other_filters.copy()
+            current_filters[in_filter_key] = chunk_values
+            
+            where_sql, params = self._build_filter_clauses(collection, current_filters)
+            
+            with self._lock:
+                conn = self._get_connection()
+                if not self._table_exists(conn, collection):
+                    continue
+
+                self._ensure_table_schema(conn, collection)
+
+                cursor = conn.execute(f'SELECT data FROM "{collection}"{where_sql}', params)
+                rows = cursor.fetchall()
+                deleted_chunk = [json.loads(row["data"]) for row in rows]
+
+                if deleted_chunk:
+                    conn.execute(f'DELETE FROM "{collection}"{where_sql}', params)
+                    if not self._in_transaction:
+                        conn.commit()
+                
+                all_deleted.extend(deleted_chunk)
+
+        return all_deleted
 
     def query (self, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
         where_sql, params = self._build_filter_clauses(collection, filters)

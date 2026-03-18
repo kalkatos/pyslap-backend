@@ -79,22 +79,16 @@ class PySlapEngine:
         session_ids = [s["id"] for s in old_sessions]
         total_cleaned = len(session_ids)
 
-        # 2. Batch-delete related data in chunks to avoid database engine parameter limits
-        BATCH_SIZE = 500
-        for i in range(0, total_cleaned, BATCH_SIZE):
-            batch_ids = session_ids[i : i + BATCH_SIZE]
+        # 2. Cancel pending updates and batch-delete related data.
+        # The database adapter now handles chunking for __in clauses automatically.
+        for s_id in session_ids:
+            self.scheduler.cancel_update(s_id)
 
-            # Cancel any pending updates for these sessions to prevent orphan loops
-            for s_id in batch_ids:
-                self.scheduler.cancel_update(s_id)
-
-            # Clear actions, rate limits, and game states tied to these sessions
-            self.db.delete_by_filter("actions", {"session_id__in": batch_ids})
-            self.db.delete_by_filter("rate_limits", {"session_id__in": batch_ids})
-            self.db.delete_by_filter("states", {"id__in": batch_ids})
-            
-            # Also clear any lingering loop locks
-            self.db.delete_by_filter("locks", {"session_id__in": batch_ids})
+        if session_ids:
+            self.db.delete_by_filter("actions", {"session_id__in": session_ids})
+            self.db.delete_by_filter("rate_limits", {"session_id__in": session_ids})
+            self.db.delete_by_filter("states", {"id__in": session_ids})
+            self.db.delete_by_filter("locks", {"session_id__in": session_ids})
 
         return total_cleaned
 

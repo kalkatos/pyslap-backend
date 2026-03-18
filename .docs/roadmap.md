@@ -134,7 +134,7 @@ Features already done are marked with ✅DONE
     *   Only create an index for a field if its column is confirmed to exist.
 *   **Testing**: Simulate a column creation failure (e.g., mock `ALTER TABLE` to raise) and verify `_ensure_table_schema` completes without raising and that subsequent queries fall back to `json_extract`.
 
-### 33. Chunk `__in` Batches to Respect SQLite Variable Limit
+### ✅DONE 33. Chunk `__in` Batches to Respect SQLite Variable Limit
 *   **Description**: `delete_by_filter` with `session_id__in` passes all expired session IDs as a single bind-parameter list. SQLite's `SQLITE_LIMIT_VARIABLE_NUMBER` is 999 on older versions (pre-3.32), causing a runtime crash when a cleanup pass exceeds that count.
 *   **Changes**:
     *   In `_build_filter_clauses` (or in `delete_by_filter` before it calls the filter builder), split `__in` value lists into chunks of at most 999 and `UNION ALL` or loop the query/delete per chunk.

@@ -276,3 +276,41 @@ class TestCleanupIntegration:
         assert db.read("sessions", "new_s") is not None
         assert db.read("states", "new_s") is not None
         assert len(db.query("actions", {"session_id": "new_s"})) == 1
+
+    def test_cleanup_with_over_999_sessions_chunks_correctly(self):
+        db = SQLiteDatabase(":memory:")
+        mock_scheduler = MagicMock()
+        games = {"dummy": DummyGame()}
+
+        engine = PySlapEngine(db=db, scheduler=mock_scheduler, games_registry=games)
+
+        now = time.time()
+        old_timestamp = now - 20000
+        
+        NUM_OLD_SESSIONS = 1500  # More than the typical SQLite variable limit
+        old_session_ids = [f"old_s_{i}" for i in range(NUM_OLD_SESSIONS)]
+
+        # Create many old sessions and related data to be cleaned up
+        for s_id in old_session_ids:
+            db.create("sessions", {"id": s_id, "created_at": old_timestamp, "game_id": "dummy"})
+            db.create("states", {"id": s_id, "session_id": s_id})
+            db.create("locks", {"id": f"lock_{s_id}", "session_id": s_id})
+
+        # Create a new session that should not be cleaned up
+        db.create("sessions", {"id": "new_s", "created_at": now, "game_id": "dummy"})
+        db.create("states", {"id": "new_s", "session_id": "new_s"})
+
+        # Run cleanup. This will fail with an "too many SQL variables" error
+        # if the delete_by_filter logic does not correctly chunk the __in query.
+        cleaned_count = engine.cleanup_old_records(max_age_sec=10000)
+
+        assert cleaned_count == NUM_OLD_SESSIONS
+
+        # Verify old data is gone by checking one of the collections
+        remaining_old_states = db.query("states", {"id__in": old_session_ids})
+        assert len(remaining_old_states) == 0
+
+        # Verify new data is intact
+        assert db.read("sessions", "new_s") is not None
+        assert db.read("states", "new_s") is not None
+
