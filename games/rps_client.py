@@ -7,13 +7,10 @@ Usage:
 
 import asyncio
 import sys
-import time
 import uuid
 from typing import Any
 
-import jwt
-
-import httpx
+from games.client_base import ClientRuntime, GameClientBase, InputFunc
 
 def parse_args():
     """Parse CLI arguments and return a config dictionary."""
@@ -74,311 +71,170 @@ def parse_args():
     config["player_name"] = config["player_id"].upper()
     return config
 
-# ---------------------------------------------------------------------------
-# HTTP helpers (async)
-# ---------------------------------------------------------------------------
 
-async def start_session (client: httpx.AsyncClient, base_url: str, game_id: str, auth_token: str, custom_data: dict[str, Any] | None = None) -> dict[str, Any] | None:
-    payload: dict[str, Any] = {
-        "game_id": game_id,
-        "auth_token": auth_token,
-    }
-    if custom_data:
-        payload["custom_data"] = custom_data
-    try:
-        resp = await client.post(f"{base_url}/session", json=payload)
-    except (httpx.ReadTimeout, httpx.ConnectError, httpx.RemoteProtocolError) as e:
-        print(f"Unable to connect to server at {base_url}: {e}")
-        print("Tip: Make sure the API server is running and reachable.")
-        return None
-    except httpx.RequestError as e:
-        print(f"Network error while starting session: {e}")
-        return None
-    if resp.status_code != 200:
-        try:
-            err_msg = resp.json().get("detail", f"Error: {resp.status_code} - {resp.text}")
-        except Exception:
-            err_msg = f"Error: {resp.status_code} - {resp.text}"
-        print(err_msg)
-        return None
-    return resp.json()
+class RpsClient(GameClientBase):
+    def __init__(self):
+        self.move_submitted = False
 
+    async def on_session_started(
+        self,
+        runtime: ClientRuntime,
+        session_response: dict[str, Any],
+        config: dict[str, Any],
+        input_func: InputFunc | None,
+    ) -> None:
+        if input_func:
+            return
 
-async def get_state (client: httpx.AsyncClient, base_url: str, session_id: str, player_id: str, token: str) -> dict[str, Any] | None:
-    try:
-        resp = await client.get(f"{base_url}/state", params={
-            "session_id": session_id,
-            "player_id": player_id,
-            "token": token,
-        })
-    except (httpx.ReadTimeout, httpx.ConnectError, httpx.RemoteProtocolError) as e:
-        print(f"\n[Warning] Network error getting state: {e}")
-        return None
-    if resp.status_code != 200:
-        try:
-            err_msg = resp.json().get("detail", f"Error: {resp.status_code} - {resp.text}")
-        except Exception:
-            err_msg = f"Error: {resp.status_code} - {resp.text}"
-        print(f"\n[Warning] Failed to get state: {err_msg}")
-        return None
-    return resp.json()
+        print("=" * 40)
+        print("  ROCK  PAPER  SCISSORS  (best of 3)")
+        if session_response.get("lobby_id") and config.get("create_lobby"):
+            lobby_id = session_response["lobby_id"]
+            print(f"  LOBBY CREATED. Code: {lobby_id}")
+            print(f"  Share with your opponent: python games/rps_client.py --join {lobby_id}")
+        elif session_response.get("lobby_id") and config.get("join_lobby"):
+            print(f"  LOBBY: {session_response['lobby_id']}")
+        print("=" * 40)
 
+    async def handle_state(
+        self,
+        runtime: ClientRuntime,
+        state: dict[str, Any],
+        input_func: InputFunc | None,
+    ) -> bool:
+        ps = state["public_state"]
+        phase = ps.get("phase", "")
 
-async def send_action (client: httpx.AsyncClient, base_url: str, session_id: str, player_id: str, token: str, action_type: str, payload: dict[str, Any], nonce: int) -> bool:
-    try:
-        resp = await client.post(f"{base_url}/action", json={
-            "session_id": session_id,
-            "player_id": player_id,
-            "token": token,
-            "action_type": action_type,
-            "payload": payload,
-            "nonce": nonce,
-        })
-    except (httpx.ReadTimeout, httpx.ConnectError, httpx.RemoteProtocolError) as e:
-        print(f"\n[Warning] Network error sending action: {e}")
-        return False
-    if resp.status_code != 200:
-        try:
-            err_msg = resp.json().get("detail", f"Error: {resp.status_code} - {resp.text}")
-        except Exception:
-            err_msg = f"Error: {resp.status_code} - {resp.text}"
-        print(f"\n[Warning] Failed to send action: {err_msg}")
-        return False
-    return True
+        if phase == "waiting_for_players":
+            if not input_func:
+                print("Waiting for an opponent to join...")
+            return False
 
+        if phase == "waiting_for_move":
+            if self.move_submitted:
+                return False
 
-# ---------------------------------------------------------------------------
-# Input helper
-# ---------------------------------------------------------------------------
-
-async def read_input (prompt: str, timeout: float) -> str:
-    """Read a line from stdin with a timeout (seconds). Returns None on timeout."""
-    loop = asyncio.get_event_loop()
-    print(prompt, end="", flush=True)
-    try:
-        # Avoid blocking the event loop for a long time
-        future = loop.run_in_executor(None, sys.stdin.readline)
-        result = await asyncio.wait_for(future, timeout=timeout)
-        stripped = result.strip()
-        if stripped == "":  # EOF
-            return "<timeout>"
-        return stripped
-    except asyncio.TimeoutError:
-        return "<timeout>"
-
-
-# ---------------------------------------------------------------------------
-# Main game loop
-# ---------------------------------------------------------------------------
-
-async def run_client (config: dict[str, Any], input_func=None) -> dict[str, Any] | None:
-    """Runs the RPS client logic. 
-    If input_func is provided, it's used instead of read_input(prompt, timeout).
-    input_func should be an async function taking (prompt, phase, round_num) and returning a move.
-    """
-    base_url = config.get("base_url", "http://localhost:8000")
-    player_id = config.get("player_id", "test_player")
-    player_name = config.get("player_name", player_id.upper())
-    game_id = config.get("game_id", "rps")
-    use_bot = config.get("use_bot", False)
-    matchmaking = config.get("matchmaking", False)
-    create_lobby = config.get("create_lobby", False)
-    join_lobby = config.get("join_lobby")
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        # ---- create session ----
-        custom_data: dict[str, Any] = {"use_bot": use_bot}
-        if matchmaking:
-            custom_data["matchmaking"] = True
-        if create_lobby:
-            custom_data["create_lobby"] = True
-        if join_lobby:
-            custom_data["join_lobby"] = join_lobby
-            
-        # mock external auth token using default external_secret
-        auth_token = jwt.encode(
-            {"player_id": player_id, "name": player_name, "exp": time.time() + 86400},
-            "pyslap_default_external_secret_32_bytes_min",
-            algorithm="HS256"
-        )
-            
-        result = await start_session(client, base_url, game_id, auth_token, custom_data=custom_data)
-        if result is None:
-            return None
-
-        session_id = result["session_id"]
-        token = result["token"]
-        lobby_id = result.get("lobby_id")
-
-        if not input_func:
-            print("=" * 40)
-            print("  ROCK  PAPER  SCISSORS  (best of 3)")
-            if lobby_id and create_lobby:
-                print(f"  LOBBY CREATED. Code: {lobby_id}")
-                print(f"  Share with your opponent: python games/rps_client.py --join {lobby_id}")
-            elif lobby_id and join_lobby:
-                print(f"  LOBBY: {lobby_id}")
-            print("=" * 40)
-
-        last_state_version = -1
-        client_nonce = 0
-        move_submitted = False
-        final_state = None
-
-        # ---- game loop ----
-        while True:
-            # Fetch current state
-            state = await get_state(client, base_url, session_id, player_id, token)
-            if state is None:
-                await asyncio.sleep(1.0)
-                continue
-
-            current_version = state.get("state_version", 0)
-            if current_version == last_state_version:
-                await asyncio.sleep(0.25)
-                continue
-
-            last_state_version = current_version
-
-            ps = state["public_state"]
-            phase = ps.get("phase", "")
-
-            match phase:
-                case "waiting_for_players":
-                    if not input_func:
-                        print("Waiting for an opponent to join...")
-                    await asyncio.sleep(1.0)
-
-                case "waiting_for_move":
-                    if move_submitted:
-                        await asyncio.sleep(0.25)
-                        continue
-
-                    rnd = ps.get("round", "?")
-                    choice = ""
-
-                    if input_func:
-                        choice = await input_func("Enter move: ", phase, rnd)
-                    else:
-                        print(f"\n--- Round {rnd} ---")
-                        while True:
-                            user_input = await read_input("Enter your move (R/P/S): ", timeout=10.0)
-                            if user_input == "<timeout>":
-                                choice = "<timeout>"
-                                break
-                            choice = user_input.upper()
-                            if choice in ("R", "P", "S"):
-                                break
-                            print(f"Invalid move '{user_input}'. Please enter R, P, or S.")
-
-                    if choice == "<timeout>":
-                        if not input_func:
-                            print("\nNo move made within 10 seconds, terminating match.")
+            rnd = ps.get("round", "?")
+            if input_func:
+                choice = await input_func("Enter move: ", phase, rnd)
+            else:
+                print(f"\n--- Round {rnd} ---")
+                while True:
+                    user_input = await self.read_input_with_timeout("Enter your move (R/P/S): ", timeout=10.0)
+                    if user_input == "<timeout>":
+                        choice = "<timeout>"
                         break
+                    choice = user_input.upper()
+                    if choice in ("R", "P", "S"):
+                        break
+                    print(f"Invalid move '{user_input}'. Please enter R, P, or S.")
 
-                    # Send the player's move
-                    client_nonce += 1
-                    ok = await send_action(
-                        client,
-                        base_url=base_url,
-                        session_id=session_id,
-                        player_id=player_id,
-                        token=token,
-                        action_type="move",
-                        payload={"choice": choice},
-                        nonce=client_nonce,
-                    )
-                    if ok:
-                        move_submitted = True
-                        if not input_func:
-                            print("Waiting for opponent's move...")
+            if choice == "<timeout>":
+                if not input_func:
+                    print("\nNo move made within 10 seconds, terminating match.")
+                runtime.final_state = state
+                return True
 
-                case "round_complete":
-                    move_submitted = False
-                    move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
+            runtime.nonce += 1
+            ok = await self.send_action(
+                runtime.client,
+                base_url=runtime.base_url,
+                session_id=runtime.session_id,
+                player_id=runtime.player_id,
+                token=runtime.token,
+                action_type="move",
+                payload={"choice": choice},
+                nonce=runtime.nonce,
+            )
+            if ok:
+                self.move_submitted = True
+                if not input_func:
+                    print("Waiting for opponent's move...")
+            return False
 
-                    private_state = state.get("private_state", {})
-                    my_raw = private_state.get("my_choice")
-                    opp_raw = private_state.get("opponent_choice")
-                    my_move = move_names.get(my_raw, "?") if my_raw else "?"
-                    opp_move = move_names.get(opp_raw, "?") if opp_raw else "?"
+        if phase == "round_complete":
+            self.move_submitted = False
+            move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
 
-                    if not input_func:
-                        print(f"Your move:     {my_move}")
-                        print(f"Opponent move: {opp_move}")
+            private_state = state.get("private_state", {})
+            my_raw = private_state.get("my_choice")
+            opp_raw = private_state.get("opponent_choice")
+            my_move = move_names.get(my_raw, "?") if my_raw else "?"
+            opp_move = move_names.get(opp_raw, "?") if opp_raw else "?"
 
-                    winner = ps.get("last_round_winner", "")
-                    my_score = private_state.get("my_score", 0)
-                    opp_score = private_state.get("opponent_score", 0)
+            if not input_func:
+                print(f"Your move:     {my_move}")
+                print(f"Opponent move: {opp_move}")
 
-                    if not input_func:
-                        if winner == "draw":
-                            print(">> It's a draw! Play again.")
-                        elif winner in ("p1", "p2"):
-                            print(f">> Round complete!")
-                        print(f"\nScore: You {my_score} - {opp_score} Opponent")
+            winner = ps.get("last_round_winner", "")
+            my_score = private_state.get("my_score", 0)
+            opp_score = private_state.get("opponent_score", 0)
 
-                    # Send explicit ack
-                    await send_action(
-                        client,
-                        base_url=base_url,
-                        session_id=session_id,
-                        player_id=player_id,
-                        token=token,
-                        action_type="ack",
-                        payload={},
-                        nonce=0,
-                    )
+            if not input_func:
+                if winner == "draw":
+                    print(">> It's a draw! Play again.")
+                elif winner in ("p1", "p2"):
+                    print(">> Round complete!")
+                print(f"\nScore: You {my_score} - {opp_score} Opponent")
 
-                case "game_over":
-                    final_state = state
-                    move_submitted = False
-                    if not input_func:
-                        move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
-                        private_state = state.get("private_state", {})
-                        my_raw = private_state.get("my_choice")
-                        opp_raw = private_state.get("opponent_choice")
-                        my_move = move_names.get(my_raw, "?") if my_raw else "?"
-                        opp_move = move_names.get(opp_raw, "?") if opp_raw else "?"
-                        
-                        print(f"Your move:     {my_move}")
-                        print(f"Opponent move: {opp_move}")
+            await self.send_action(
+                runtime.client,
+                base_url=runtime.base_url,
+                session_id=runtime.session_id,
+                player_id=runtime.player_id,
+                token=runtime.token,
+                action_type="ack",
+                payload={},
+                nonce=0,
+            )
+            return False
 
-                        my_score = private_state.get("my_score", 0)
-                        opp_score = private_state.get("opponent_score", 0)
+        if phase == "game_over":
+            runtime.final_state = state
+            self.move_submitted = False
+            if not input_func:
+                move_names = {"R": "Rock", "P": "Paper", "S": "Scissors"}
+                private_state = state.get("private_state", {})
+                my_raw = private_state.get("my_choice")
+                opp_raw = private_state.get("opponent_choice")
+                my_move = move_names.get(my_raw, "?") if my_raw else "?"
+                opp_move = move_names.get(opp_raw, "?") if opp_raw else "?"
 
-                        winner = ps.get("last_round_winner", "")
-                        if winner == "draw":
-                            print(">> It's a draw! Play again.")
-                        else:
-                            print(">> Round complete!")
+                print(f"Your move:     {my_move}")
+                print(f"Opponent move: {opp_move}")
 
-                        print("\n" + "=" * 40)
-                        print(f"  FINAL SCORE:  You {my_score} - {opp_score} Opponent")
-                        if my_score > opp_score:
-                            print("  🎉  You win the match!")
-                        elif opp_score > my_score:
-                            print("  😔  Opponent wins the match!")
-                        else:
-                            print("  🤝  Match drawn!")
-                        print("=" * 40)
-                    break
+                my_score = private_state.get("my_score", 0)
+                opp_score = private_state.get("opponent_score", 0)
 
-                case "timeout":
-                    if not input_func:
-                        print("\nNo move made within 10 seconds, terminating match.")
-                    break
+                winner = ps.get("last_round_winner", "")
+                if winner == "draw":
+                    print(">> It's a draw! Play again.")
+                else:
+                    print(">> Round complete!")
 
-                case _:
-                    if not input_func:
-                        print(f"\n! ! ! Unknown phase: {phase}")
+                print("\n" + "=" * 40)
+                print(f"  FINAL SCORE:  You {my_score} - {opp_score} Opponent")
+                if my_score > opp_score:
+                    print("  🎉  You win the match!")
+                elif opp_score > my_score:
+                    print("  😔  Opponent wins the match!")
+                else:
+                    print("  🤝  Match drawn!")
+                print("=" * 40)
+            return True
 
-            await asyncio.sleep(0.1)
+        if phase == "timeout":
+            runtime.final_state = state
+            if not input_func:
+                print("\nNo move made within 10 seconds, terminating match.")
+            return True
 
         if not input_func:
-            print("\nThanks for playing!")
-        
-        return final_state
+            print(f"\n! ! ! Unknown phase: {phase}")
+        return False
+
+async def run_client(config: dict[str, Any], input_func=None) -> dict[str, Any] | None:
+    return await RpsClient().run_client(config, input_func=input_func)
 
 
 if __name__ == "__main__":
