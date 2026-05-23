@@ -1,0 +1,3 @@
+[submodule "pyslap"]
+	path = pyslap
+	url = https://github.com/kalkatos/pyslap.git
