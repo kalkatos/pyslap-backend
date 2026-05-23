@@ -85,7 +85,15 @@ async def start_session (client: httpx.AsyncClient, base_url: str, game_id: str,
     }
     if custom_data:
         payload["custom_data"] = custom_data
-    resp = await client.post(f"{base_url}/session", json=payload)
+    try:
+        resp = await client.post(f"{base_url}/session", json=payload)
+    except (httpx.ReadTimeout, httpx.ConnectError, httpx.RemoteProtocolError) as e:
+        print(f"Unable to connect to server at {base_url}: {e}")
+        print("Tip: Make sure the API server is running and reachable.")
+        return None
+    except httpx.RequestError as e:
+        print(f"Network error while starting session: {e}")
+        return None
     if resp.status_code != 200:
         try:
             err_msg = resp.json().get("detail", f"Error: {resp.status_code} - {resp.text}")
@@ -375,4 +383,7 @@ async def run_client (config: dict[str, Any], input_func=None) -> dict[str, Any]
 
 if __name__ == "__main__":
     cl_config = parse_args()
-    asyncio.run(run_client(cl_config))
+    try:
+        asyncio.run(run_client(cl_config))
+    except KeyboardInterrupt:
+        print("\nInterrupted by user.")
