@@ -14,6 +14,8 @@ from games.client_base import ClientRuntime, GameClientBase
 
 # Helpers to keep client independent of server-side logic
 def _is_valid_placement (x: int, y: int, length: int, orientation: str, existing_board: List[List[str]]) -> bool:
+    if x < 0 or y < 0 or x >= GRID_SIZE or y >= GRID_SIZE:
+        return False
     if orientation == 'H':
         if x + length > 10: return False
         for i in range(length):
@@ -72,11 +74,11 @@ class BattleshipClient(GameClientBase):
             if not self.placements_done:
                 print("\n--- SHIP PLACEMENT PHASE ---")
                 placements = []
+                temp_board = [["" for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
                 choice = await self.read_input("Do you want (A)uto-placement or (M)anual? ")
                 if choice.upper() == "A":
                     import random as lrand
 
-                    temp_board = [["" for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
                     for name, length in SHIPS_CONFIG.items():
                         while True:
                             x, y, orientation = lrand.randint(0, 9), lrand.randint(0, 9), lrand.choice(["H", "V"])
@@ -92,13 +94,17 @@ class BattleshipClient(GameClientBase):
                                 raw = await self.read_input("Enter x y orientation(H/V) (e.g. 0 0 H): ")
                                 parts = raw.split()
                                 x, y, orientation = int(parts[0]), int(parts[1]), parts[2].upper()
+                                if not _is_valid_placement(x, y, length, orientation, temp_board):
+                                    print("Invalid placement (out of bounds, overlap, or bad orientation). Try again.")
+                                    continue
+                                _place_ship(x, y, length, orientation, name, temp_board)
                                 placements.append({"name": name, "x": x, "y": y, "orientation": orientation})
                                 break
                             except Exception:
                                 print("Invalid input. Try again.")
 
                 runtime.nonce += 1
-                await self.send_action(
+                ok = await self.send_action(
                     runtime.client,
                     runtime.base_url,
                     runtime.session_id,
@@ -108,8 +114,13 @@ class BattleshipClient(GameClientBase):
                     {"placements": placements},
                     runtime.nonce,
                 )
-                self.placements_done = True
-                print("Ships placed. Waiting for opponent...")
+                if ok:
+                    self.placements_done = True
+                    print("Ships placed. Waiting for opponent...")
+                else:
+                    # Reprocess setup state so player can retry ship placement.
+                    runtime.last_state_version = -1
+                    print("Could not submit placements. Please try again.")
             return False
 
         if phase == "playing":

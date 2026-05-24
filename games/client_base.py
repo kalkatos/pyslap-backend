@@ -7,6 +7,7 @@ can focus on phase-specific input, rendering, and action payloads.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from typing import Any, Awaitable, Callable
 
 import httpx
 import jwt
+from pyslap.config import settings
 
 InputFunc = Callable[[str, str, int], Awaitable[str]]
 
@@ -37,7 +39,10 @@ class GameClientBase(ABC):
     http_timeout = 30.0
     poll_delay = 0.25
     unchanged_state_delay = 0.5
-    token_key = "pyslap_default_external_secret_32_bytes_min"
+    token_key_env_var = "PYSLAP_EXTERNAL_SECRET"
+    token_key: str | None = None
+    _default_external_secret = "pyslap_default_external_secret_32_bytes_min"
+    _warned_default_secret = False
     token_lifetime_sec = 86400
 
     def build_custom_data(self, config: dict[str, Any]) -> dict[str, Any]:
@@ -51,12 +56,26 @@ class GameClientBase(ABC):
         return custom_data
 
     def build_auth_token(self, player_id: str, player_name: str) -> str:
+        token_key = self.resolve_token_key()
         payload = {
             "player_id": player_id,
             "name": player_name,
             "exp": time.time() + self.token_lifetime_sec,
         }
-        return jwt.encode(payload, self.token_key, algorithm="HS256")
+        return jwt.encode(payload, token_key, algorithm="HS256")
+
+    def resolve_token_key(self) -> str:
+        token_key = os.getenv(self.token_key_env_var) or self.token_key or settings.external_secret
+        if token_key:
+            if token_key == self._default_external_secret and not self._warned_default_secret:
+                print(
+                    "[Warning] Using default external secret; set PYSLAP_EXTERNAL_SECRET for safer local/testing setup."
+                )
+                self._warned_default_secret = True
+            return token_key
+        raise RuntimeError(
+            f"Missing auth signing key. Set {self.token_key_env_var} or override token_key on the client class."
+        )
 
     async def start_session(
         self,
@@ -106,6 +125,9 @@ class GameClientBase(ABC):
         except (httpx.ReadTimeout, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
             print(f"\n[Warning] Network error getting state: {exc}")
             return None
+        except httpx.RequestError as exc:
+            print(f"\n[Warning] Request error getting state: {exc}")
+            return None
 
         if resp.status_code != 200:
             try:
@@ -142,6 +164,9 @@ class GameClientBase(ABC):
             )
         except (httpx.ReadTimeout, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
             print(f"\n[Warning] Network error sending action: {exc}")
+            return False
+        except httpx.RequestError as exc:
+            print(f"\n[Warning] Request error sending action: {exc}")
             return False
 
         if resp.status_code != 200:
@@ -184,7 +209,11 @@ class GameClientBase(ABC):
         game_id = config.get("game_id", self.default_game_id(config))
 
         custom_data = self.build_custom_data(config)
-        auth_token = self.build_auth_token(player_id, player_name)
+        try:
+            auth_token = self.build_auth_token(player_id, player_name)
+        except RuntimeError as exc:
+            print(exc)
+            return None
 
         async with httpx.AsyncClient(timeout=self.http_timeout) as client:
             response = await self.start_session(client, base_url, game_id, auth_token, custom_data)
