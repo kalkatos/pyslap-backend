@@ -6,9 +6,13 @@ Usage:
 """
 
 import asyncio
+from pathlib import Path
 import sys
 import uuid
 from typing import Any
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from games.client_base import ClientRuntime, GameClientBase, InputFunc
 
